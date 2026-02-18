@@ -72,6 +72,37 @@ async def test_long_content_chunked(httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_sends_groq_api_key(monkeypatch, httpx_mock):
+    """Auth header must be present when GROQ_API_KEY is set."""
+    monkeypatch.setattr(promptguard, "GROQ_API_KEY", "test-groq-key-123")
+    httpx_mock.add_response(
+        url="http://api.groq.com/openai/v1/chat/completions",
+        json={
+            "choices": [{"message": {"content": "BENIGN"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
+        },
+    )
+    await scan_content("Hello world")
+    request = httpx_mock.get_requests()[0]
+    assert request.headers["authorization"] == "Bearer test-groq-key-123"
+
+
+@pytest.mark.asyncio
+async def test_no_auth_header_without_key(httpx_mock):
+    """No auth header when GROQ_API_KEY is empty."""
+    httpx_mock.add_response(
+        url="http://api.groq.com/openai/v1/chat/completions",
+        json={
+            "choices": [{"message": {"content": "BENIGN"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
+        },
+    )
+    await scan_content("Hello world")
+    request = httpx_mock.get_requests()[0]
+    assert "authorization" not in request.headers
+
+
+@pytest.mark.asyncio
 async def test_groq_unavailable_fails_open(httpx_mock):
     """If Groq is down, fail open — log and continue."""
     import httpx
