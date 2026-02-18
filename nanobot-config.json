@@ -1,0 +1,24 @@
+{
+    "agents": {
+        "defaults": {
+            "workspace": "~/.nanobot/workspace",
+            "model": "anthropic/claude-sonnet-4-6",
+            "maxTokens": 4096,
+            "temperature": 0.7,
+            "maxToolIterations": 10,
+            "memoryWindow": 20
+        }
+    },
+    "providers": {
+        "anthropic": {}
+    },
+    "channels": {},
+    "tools": {
+        "restrictToWorkspace": true,
+        "mcpServers": {}
+    },
+    "gateway": {
+        "host": "0.0.0.0",
+        "port": 18790
+    }
+}
