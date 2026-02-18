@@ -11,6 +11,8 @@ services:
   log-service:
     build:
       context: log-service
+    ports:
+      - "8081:8081"
     environment:
       - LOG_FILE=/data/agent.jsonl
     volumes:

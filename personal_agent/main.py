@@ -75,7 +75,10 @@ async def cli_loop(agent):
             break
         if not user_input.strip():
             continue
+        from personal_agent.logging.client import log_event
+        await log_event("user_message", content=user_input)
         response = await agent.process_direct(user_input)
+        await log_event("agent_response", content=response)
         print(f"\n{response}\n")
 
 
