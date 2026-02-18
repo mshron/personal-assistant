@@ -1,0 +1,22 @@
+app = "personal-agent"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.fly"
+
+[env]
+  LOG_SERVICE_URL = "http://localhost:8081/log"
+  HTTP_PROXY = "http://localhost:8080"
+  LOG_FILE = "/data/logs/agent.jsonl"
+
+[mounts]
+  source = "agent_data"
+  destination = "/data"
+  # Single volume for all persistent state:
+  #   /data/nanobot/   — JSONL sessions, MEMORY.md, HISTORY.md
+  #   /data/logs/      — append-only JSONL audit log
+  # Fly takes daily snapshots, retained 5 days.
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = 2048

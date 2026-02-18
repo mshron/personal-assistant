@@ -1,0 +1,31 @@
+# Combined Dockerfile for Fly.io single-machine deployment.
+# Runs tokenizer + log-service + agent in one container.
+
+FROM golang:1.24-alpine AS tokenizer-builder
+RUN apk add --no-cache git
+RUN git clone --depth 1 https://github.com/superfly/tokenizer.git /src
+WORKDIR /src
+RUN go build -o /tokenizer ./cmd/tokenizer
+
+FROM python:3.12-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Tokenizer binary
+COPY --from=tokenizer-builder /tokenizer /usr/local/bin/tokenizer
+
+WORKDIR /app
+
+# Python deps (cached layer)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-dev --frozen
+
+# Application code
+COPY personal_agent/ personal_agent/
+COPY nanobot-config.json .
+COPY log-service/main.py log-service/main.py
+COPY start.sh .
+RUN chmod +x start.sh
+
+CMD ["./start.sh"]
