@@ -80,7 +80,9 @@ async def cli_loop(agent):
 
 
 async def run():
+    from personal_agent.nanobot_hooks import apply_guardrails
     agent = _build_agent()
+    apply_guardrails(agent)
     await cli_loop(agent)
     await agent.close_mcp()
 
