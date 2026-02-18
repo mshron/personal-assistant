@@ -19,17 +19,29 @@ def _build_agent():
     config_path = Path(__file__).parent.parent / "nanobot-config.json"
     config = load_config(config_path)
 
-    # Inject API key from environment
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY not set. Copy .env.example to .env and fill it in.")
-        sys.exit(1)
+    # Tokenizer mode: API key is inside the sealed secret, routed through proxy.
+    # Direct mode: API key from environment, direct HTTPS to Anthropic.
+    tokenized_anthropic = os.environ.get("TOKENIZED_ANTHROPIC", "")
+
+    if tokenized_anthropic:
+        # Through Tokenizer: dummy key, http base URL, sealed secret in headers
+        api_key = "via-tokenizer"
+        api_base = "http://api.anthropic.com"
+        extra_headers = {"Proxy-Tokenizer": tokenized_anthropic}
+    else:
+        # Direct mode (local dev without Docker)
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            print("Error: Set ANTHROPIC_API_KEY (direct) or TOKENIZED_ANTHROPIC (via Tokenizer).")
+            sys.exit(1)
+        api_base = None
+        extra_headers = None
 
     provider = LiteLLMProvider(
         api_key=api_key,
-        api_base=None,
+        api_base=api_base,
         default_model=config.agents.defaults.model,
-        extra_headers=None,
+        extra_headers=extra_headers,
         provider_name="anthropic",
     )
 

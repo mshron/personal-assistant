@@ -1,0 +1,45 @@
+services:
+  tokenizer:
+    build:
+      context: tokenizer
+    environment:
+      - OPEN_KEY=${OPEN_KEY}
+    networks:
+      - internal
+    restart: unless-stopped
+
+  log-service:
+    build:
+      context: log-service
+    environment:
+      - LOG_FILE=/data/agent.jsonl
+    volumes:
+      - log-data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      - HTTP_PROXY=http://tokenizer:8080
+      - LOG_SERVICE_URL=http://log-service:8081/log
+    volumes:
+      - agent-data:/data/nanobot
+    depends_on:
+      - tokenizer
+      - log-service
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  log-data:
+  agent-data:
