@@ -15,6 +15,7 @@ import httpx
 ANTHROPIC_URL = os.environ.get(
     "ANTHROPIC_API_URL", "http://api.anthropic.com/v1/messages"
 )
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 REVIEW_MODEL = os.environ.get("ACTION_REVIEW_MODEL", "claude-haiku-4-5-20241022")
 
 SIDE_EFFECTING_TOOLS = frozenset({
@@ -53,7 +54,10 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=15.0)
+        headers = {"anthropic-version": "2023-06-01"}
+        if ANTHROPIC_API_KEY:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+        _client = httpx.AsyncClient(timeout=15.0, headers=headers)
     return _client
 
 
@@ -84,7 +88,6 @@ async def review_action(
             "max_tokens": 200,
             "messages": [{"role": "user", "content": prompt}],
         },
-        headers={"anthropic-version": "2023-06-01"},
     )
     response.raise_for_status()
     text = response.json()["content"][0]["text"]

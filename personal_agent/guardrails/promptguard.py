@@ -20,6 +20,7 @@ import httpx
 GROQ_URL = os.environ.get(
     "GROQ_API_URL", "http://api.groq.com/openai/v1/chat/completions"
 )
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 PROMPTGUARD_MODEL = os.environ.get(
     "PROMPTGUARD_MODEL", "meta-llama/llama-prompt-guard-2-86m"
 )
@@ -32,7 +33,10 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=10.0)
+        headers = {}
+        if GROQ_API_KEY:
+            headers["Authorization"] = f"Bearer {GROQ_API_KEY}"
+        _client = httpx.AsyncClient(timeout=10.0, headers=headers)
     return _client
 
 
