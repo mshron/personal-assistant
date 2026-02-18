@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import httpx
 
 ANTHROPIC_URL = os.environ.get(
-    "ANTHROPIC_API_URL", "http://api.anthropic.com/v1/messages"
+    "ANTHROPIC_API_URL", "https://api.anthropic.com/v1/messages"
 )
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 REVIEW_MODEL = os.environ.get("ACTION_REVIEW_MODEL", "claude-haiku-4-5-20241022")

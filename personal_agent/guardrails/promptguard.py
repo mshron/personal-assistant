@@ -18,12 +18,14 @@ from dataclasses import dataclass
 import httpx
 
 GROQ_URL = os.environ.get(
-    "GROQ_API_URL", "http://api.groq.com/openai/v1/chat/completions"
+    "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
 )
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 PROMPTGUARD_MODEL = os.environ.get(
     "PROMPTGUARD_MODEL", "meta-llama/llama-prompt-guard-2-86m"
 )
+# Score above this threshold is considered a prompt injection attempt.
+MALICIOUS_THRESHOLD = float(os.environ.get("PROMPTGUARD_THRESHOLD", "0.25"))
 # Rough chars-per-chunk. 512 tokens ~ 1500 chars for English text.
 CHUNK_SIZE = 1200
 
@@ -45,11 +47,11 @@ class ScanResult:
     is_malicious: bool
     is_benign: bool
     skipped: bool = False
-    chunk_results: list[str] | None = None
+    chunk_scores: list[float] | None = None
 
 
-async def _scan_chunk(chunk: str) -> str:
-    """Scan a single chunk. Returns 'BENIGN' or 'MALICIOUS'."""
+async def _scan_chunk(chunk: str) -> float:
+    """Scan a single chunk. Returns injection probability (0.0–1.0)."""
     response = await _get_client().post(
         GROQ_URL,
         json={
@@ -58,7 +60,8 @@ async def _scan_chunk(chunk: str) -> str:
         },
     )
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"].strip()
+    raw = response.json()["choices"][0]["message"]["content"].strip()
+    return float(raw)
 
 
 async def scan_content(content: str) -> ScanResult:
@@ -69,14 +72,14 @@ async def scan_content(content: str) -> ScanResult:
     chunks = [content[i:i + CHUNK_SIZE] for i in range(0, len(content), CHUNK_SIZE)]
 
     try:
-        results = await asyncio.gather(*[_scan_chunk(c) for c in chunks])
-    except (httpx.HTTPError, httpx.StreamError):
-        # Groq unreachable — fail open, Layer 2 is the backstop
+        scores = await asyncio.gather(*[_scan_chunk(c) for c in chunks])
+    except (httpx.HTTPError, httpx.StreamError, ValueError):
+        # Groq unreachable or unparseable — fail open, Layer 2 is the backstop
         return ScanResult(is_malicious=False, is_benign=True, skipped=True)
 
-    is_malicious = any(r == "MALICIOUS" for r in results)
+    is_malicious = any(s >= MALICIOUS_THRESHOLD for s in scores)
     return ScanResult(
         is_malicious=is_malicious,
         is_benign=not is_malicious,
-        chunk_results=list(results),
+        chunk_scores=list(scores),
     )

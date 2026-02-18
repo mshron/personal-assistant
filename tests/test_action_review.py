@@ -19,7 +19,7 @@ MISALIGNED_RESPONSE = '{"aligned": false, "reason": "User asked to email Alice b
 @pytest.fixture
 def mock_haiku_aligned(httpx_mock):
     httpx_mock.add_response(
-        url="http://api.anthropic.com/v1/messages",
+        url="https://api.anthropic.com/v1/messages",
         json={
             "content": [{"type": "text", "text": ALIGNED_RESPONSE}],
             "stop_reason": "end_turn",
@@ -31,7 +31,7 @@ def mock_haiku_aligned(httpx_mock):
 @pytest.fixture
 def mock_haiku_misaligned(httpx_mock):
     httpx_mock.add_response(
-        url="http://api.anthropic.com/v1/messages",
+        url="https://api.anthropic.com/v1/messages",
         json={
             "content": [{"type": "text", "text": MISALIGNED_RESPONSE}],
             "stop_reason": "end_turn",
@@ -65,7 +65,7 @@ async def test_sends_anthropic_api_key(monkeypatch, httpx_mock):
     """x-api-key and anthropic-version headers must be present."""
     monkeypatch.setattr(action_review, "ANTHROPIC_API_KEY", "test-anthropic-key-456")
     httpx_mock.add_response(
-        url="http://api.anthropic.com/v1/messages",
+        url="https://api.anthropic.com/v1/messages",
         json={
             "content": [{"type": "text", "text": ALIGNED_RESPONSE}],
             "stop_reason": "end_turn",
@@ -88,7 +88,7 @@ async def test_sends_correct_model_and_prompt(httpx_mock, monkeypatch):
     import json
     monkeypatch.setattr(action_review, "ANTHROPIC_API_KEY", "test-key")
     httpx_mock.add_response(
-        url="http://api.anthropic.com/v1/messages",
+        url="https://api.anthropic.com/v1/messages",
         json={
             "content": [{"type": "text", "text": ALIGNED_RESPONSE}],
             "stop_reason": "end_turn",
