@@ -19,6 +19,11 @@ Nuclear option. Drops from ~3 LLM calls per exchange to 1, cutting API cost by ~
 
 ---
 
+### Tokenizer for Mac deployment
+When deploying the agent on a Mac (not Fly.io), set up Fly's [Tokenizer](https://github.com/superfly/tokenizer) or equivalent to keep the Anthropic API key out of plaintext environment variables. The Fly deployment currently uses `ANTHROPIC_API_KEY` directly as a secret; the tokenizer sealed-secret path (`TOKENIZED_ANTHROPIC`) is still supported in `main.py` but the tokenizer binary was removed from the Docker build.
+
+---
+
 ## Security hardening
 
 ### Egress restriction
@@ -34,8 +39,8 @@ Action Review needs the user's original intent. Currently `GuardedToolRegistry.u
 
 ## Features
 
-### Zulip channel integration
-Implement `ZulipChannel(BaseChannel)` for Nanobot (~200 lines, following Slack channel pattern). Use `zulip` Python SDK with event queue + long-polling. Start with DMs only, add stream-based interaction later. Contribute upstream to HKUDS/nanobot. See Task 10 in implementation plan.
+### ~~Zulip channel integration~~ (DONE)
+Implemented and deployed. `ZulipChannel(BaseChannel)` supports both DMs and stream messages.
 
 ### Brave Search API key
 Nanobot's `web_search` tool uses the Brave Search API. Without a key, the agent can fetch specific URLs but cannot do open-ended web searches. Add `BRAVE_API_KEY` to the environment.
