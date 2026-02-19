@@ -1,4 +1,4 @@
-app = "personal-agent"
+app = "polynumeral-assistant"
 primary_region = "iad"
 
 [build]
@@ -6,8 +6,8 @@ primary_region = "iad"
 
 [env]
   LOG_SERVICE_URL = "http://localhost:8081/log"
-  HTTP_PROXY = "http://localhost:8080"
   LOG_FILE = "/data/logs/agent.jsonl"
+  AGENT_MODE = "zulip"
 
 [mounts]
   source = "agent_data"
