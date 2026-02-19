@@ -82,12 +82,36 @@ async def cli_loop(agent):
         print(f"\n{response}\n")
 
 
+async def run_zulip(agent):
+    """Run the agent in Zulip gateway mode."""
+    from personal_agent.zulip_channel import ZulipChannel, ZulipConfig
+
+    config = ZulipConfig.from_env()
+    channel = ZulipChannel(config, agent.bus)
+
+    # Subscribe channel to receive outbound messages
+    agent.bus.subscribe_outbound("zulip", channel.send)
+
+    # Run agent loop, channel listener, and outbound dispatcher concurrently
+    await asyncio.gather(
+        agent.run(),
+        channel.start(),
+        agent.bus.dispatch_outbound(),
+    )
+
+
 async def run():
     from personal_agent.nanobot_hooks import apply_guardrails
     agent = _build_agent()
     apply_guardrails(agent)
-    await cli_loop(agent)
-    await agent.close_mcp()
+
+    mode = os.environ.get("AGENT_MODE", "cli")
+
+    if mode == "zulip":
+        await run_zulip(agent)
+    else:
+        await cli_loop(agent)
+        await agent.close_mcp()
 
 
 def main():
