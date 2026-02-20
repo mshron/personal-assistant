@@ -162,7 +162,7 @@ class InstrumentedProvider:
 
         # Rate-limit: consume actual tokens used
         if self._bucket and response.usage:
-            total = response.usage.get("input_tokens", 0) + response.usage.get("output_tokens", 0)
+            total = response.usage.get("prompt_tokens", 0) + response.usage.get("completion_tokens", 0)
             self._bucket.consume(total)
 
         return response
