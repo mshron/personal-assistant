@@ -19,6 +19,13 @@ def _build_agent():
     config_path = Path(__file__).parent.parent / "nanobot-config.json"
     config = load_config(config_path)
 
+    # Inject MCP server env vars that can't be set statically in JSON.
+    # Nanobot's MCP subprocess only inherits a whitelist (HOME, PATH, etc.),
+    # so secrets must be passed explicitly via the env dict.
+    kagi_key = os.environ.get("KAGI_API_KEY", "")
+    if kagi_key and "kagi" in config.tools.mcp_servers:
+        config.tools.mcp_servers["kagi"].env["KAGI_API_KEY"] = kagi_key
+
     # Tokenizer mode: API key is inside the sealed secret, routed through proxy.
     # Direct mode: API key from environment, direct HTTPS to Anthropic.
     tokenized_anthropic = os.environ.get("TOKENIZED_ANTHROPIC", "")

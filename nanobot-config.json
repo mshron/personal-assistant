@@ -15,7 +15,13 @@
     "channels": {},
     "tools": {
         "restrictToWorkspace": true,
-        "mcpServers": {}
+        "mcpServers": {
+            "kagi": {
+                "command": "uv",
+                "args": ["tool", "run", "kagimcp"],
+                "env": {}
+            }
+        }
     },
     "gateway": {
         "host": "0.0.0.0",

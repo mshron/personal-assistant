@@ -4,7 +4,12 @@ Wraps ToolRegistry.execute and LLMProvider.chat to add:
 - Pre-execution: Action Review for side-effecting tools
 - Post-execution: PromptGuard scanning for external content tools
 - Full instrumentation: every LLM call, tool call, and result is logged
+- Token-bucket rate limiting for Anthropic API calls
 """
+
+import asyncio
+import os
+import time
 
 from personal_agent.guardrails.action_review import (
     ReviewResult,
@@ -23,6 +28,8 @@ EXTERNAL_CONTENT_TOOLS = frozenset({
     "mcp_web_web_fetch",
     "mcp_web_web_search",
     "mcp_email_read_email",
+    "mcp_kagi_search",
+    "mcp_kagi_summarizer",
 })
 
 # Truncate long values in logs to keep JSONL lines manageable
@@ -84,17 +91,52 @@ class GuardedToolRegistry:
         return result
 
 
+class TokenBucket:
+    """Token-bucket rate limiter for API calls.
+
+    Starts full at `tokens_per_minute` tokens. Refills at TPM/60 tokens per
+    second. The bucket can go negative after consume(); wait() sleeps until it
+    refills back to zero.
+    """
+
+    def __init__(self, tokens_per_minute: int):
+        self.rate = tokens_per_minute / 60.0  # tokens/sec
+        self.capacity = float(tokens_per_minute)
+        self.tokens = self.capacity
+        self.last_refill = time.monotonic()
+
+    def _refill(self):
+        now = time.monotonic()
+        self.tokens = min(self.capacity, self.tokens + (now - self.last_refill) * self.rate)
+        self.last_refill = now
+
+    async def wait(self):
+        self._refill()
+        if self.tokens <= 0:
+            wait_secs = -self.tokens / self.rate
+            await asyncio.sleep(wait_secs)
+            self._refill()
+
+    def consume(self, count: int):
+        self.tokens -= count
+
+
 class InstrumentedProvider:
     """Wraps an LLMProvider to log every LLM request and response."""
 
-    def __init__(self, inner):
+    def __init__(self, inner, bucket: TokenBucket | None = None):
         self._inner = inner
+        self._bucket = bucket
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
     async def chat(self, messages, tools=None, model=None,
                    max_tokens=4096, temperature=0.7):
+        # Rate-limit: wait if bucket is depleted
+        if self._bucket:
+            await self._bucket.wait()
+
         # Log the request (last message is the most relevant)
         last_msg = messages[-1] if messages else {}
         await log_event("llm_request",
@@ -118,6 +160,11 @@ class InstrumentedProvider:
                         finish_reason=response.finish_reason,
                         usage=response.usage)
 
+        # Rate-limit: consume actual tokens used
+        if self._bucket and response.usage:
+            total = response.usage.get("input_tokens", 0) + response.usage.get("output_tokens", 0)
+            self._bucket.consume(total)
+
         return response
 
 
@@ -131,6 +178,10 @@ def apply_guardrails(agent) -> None:
 
     Replaces agent.tools with a GuardedToolRegistry wrapper and
     agent.provider with an InstrumentedProvider wrapper.
+    Rate-limits LLM calls if RATE_LIMIT_TPM is set to a positive integer.
     """
+    tpm = int(os.environ.get("RATE_LIMIT_TPM", "0"))
+    bucket = TokenBucket(tpm) if tpm > 0 else None
+
     agent.tools = GuardedToolRegistry(agent.tools)
-    agent.provider = InstrumentedProvider(agent.provider)
+    agent.provider = InstrumentedProvider(agent.provider, bucket=bucket)

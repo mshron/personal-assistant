@@ -64,11 +64,12 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 
 ### Secrets
 
-Set via `fly secrets set`. Actual values are in `.env` locally. Key secrets:
+**NEVER read, open, grep, or cat the `.env` file.** It contains live secrets and must only be edited by the user directly. Set production secrets via `fly secrets set`. Key secrets:
 - `ANTHROPIC_API_KEY` — direct API key (no tokenizer)
 - `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials
 - `ZULIP_STREAMS` — comma-separated streams for non-mention monitoring
 - `GROQ_API_KEY` — for PromptGuard (LlamaGuard)
+- `KAGI_API_KEY` — for Kagi search/summarizer MCP tools
 
 ## Zulip channel behavior
 
@@ -91,6 +92,8 @@ Set via `fly secrets set`. Actual values are in `.env` locally. Key secrets:
 | `ZULIP_STREAMS` | Streams to monitor (comma-separated) |
 | `ZULIP_ALLOW_FROM` | Optional sender ID allowlist |
 | `GROQ_API_KEY` | For PromptGuard layer |
+| `KAGI_API_KEY` | For Kagi search/summarizer (MCP) |
+| `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
 | `LOG_FILE` | Path for audit log JSONL |
 | `LOG_SERVICE_URL` | URL of log-service sidecar |
 
