@@ -221,12 +221,6 @@ class ZulipChannel(BaseChannel):
 
         msg_type = message.get("type", "")
 
-        # For stream messages, check if the stream is in our allowed list
-        if msg_type == "stream":
-            stream = message.get("display_recipient", "")
-            if self.config.streams and stream not in self.config.streams:
-                return
-
         # Build chat_id
         if msg_type == "stream":
             stream = message.get("display_recipient", "")
@@ -238,14 +232,22 @@ class ZulipChannel(BaseChannel):
 
         raw_content = message.get("content", "")
 
-        # For stream messages, check engagement
+        # For stream messages, check engagement.
+        # @mentions work in ANY stream; non-mention messages only in
+        # configured streams where the topic is already engaged.
         newly_engaged = False
         if msg_type == "stream":
             has_mention = self._has_mention(raw_content)
+            in_monitored_stream = (
+                not self.config.streams or stream in self.config.streams
+            )
             if has_mention:
                 newly_engaged = self._engage_topic(chat_id)
+            elif not in_monitored_stream:
+                # Non-mention in a stream we don't monitor — skip
+                return
             elif not self._is_engaged(chat_id):
-                # Not mentioned and topic not engaged — skip
+                # Non-mention, monitored stream, but topic not engaged — skip
                 return
 
         # Strip bot mention from content

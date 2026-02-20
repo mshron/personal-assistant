@@ -206,14 +206,31 @@ async def test_dm_message_publishes_inbound(tmp_path):
     assert msg.content == "hi there"
 
 
-async def test_stream_not_in_allowed_list(tmp_path):
+async def test_stream_not_in_allowed_list_no_mention(tmp_path):
+    """Non-mentioned messages in non-configured streams are skipped."""
     config = _make_config(streams=["general"])
     channel = _make_channel(config, tmp_path=tmp_path)
     channel._loop = asyncio.get_running_loop()
 
-    # Returns before run_coroutine_threadsafe — no deadlock
-    channel._on_message_sync(_stream_message(display_recipient="random"))
+    channel._on_message_sync(_stream_message(
+        display_recipient="random", content="hello"
+    ))
     channel.bus.publish_inbound.assert_not_awaited()
+
+
+async def test_mention_in_any_stream_works(tmp_path):
+    """@mentions are processed even in streams not in the configured list."""
+    config = _make_config(streams=["general"])
+    channel = _make_channel(config, tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    await _call_from_thread(channel, _stream_message(
+        display_recipient="random", content="@**Bot** help me"
+    ))
+    channel.bus.publish_inbound.assert_awaited_once()
+    msg = channel.bus.publish_inbound.call_args[0][0]
+    assert msg.content == "help me"
+    assert msg.chat_id == "random:greetings"
 
 
 async def test_mention_stripped(tmp_path):
