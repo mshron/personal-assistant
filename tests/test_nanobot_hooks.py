@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from personal_agent.nanobot_hooks import wrap_tool_registry
+from personal_agent.nanobot_hooks import wrap_tool_registry, InstrumentedProvider, GuardedToolRegistry
 from personal_agent.guardrails.promptguard import ScanResult
 from personal_agent.guardrails.action_review import ReviewResult
 
@@ -91,3 +91,32 @@ async def test_proxy_passes_through_other_attrs(mock_review, mock_registry):
     mock_registry.list_tools = MagicMock(return_value=["tool_a", "tool_b"])
     wrapped = wrap_tool_registry(mock_registry, user_intent="test")
     assert wrapped.list_tools() == ["tool_a", "tool_b"]
+
+
+@pytest.mark.asyncio
+@patch("personal_agent.nanobot_hooks.review_action")
+async def test_instrumented_provider_updates_user_intent(mock_review, mock_registry):
+    """InstrumentedProvider.chat() should set guarded_tools.user_intent from latest user message."""
+    mock_review.return_value = ReviewResult(approved=True, reason="Aligned")
+    guarded = GuardedToolRegistry(mock_registry, user_intent="")
+
+    # Build a mock LLM provider
+    mock_provider = MagicMock()
+    mock_response = MagicMock()
+    mock_response.tool_calls = []
+    mock_response.content = "Sure, I'll list the files."
+    mock_response.finish_reason = "stop"
+    mock_response.usage = {"prompt_tokens": 10, "completion_tokens": 5}
+    mock_provider.chat = AsyncMock(return_value=mock_response)
+
+    instrumented = InstrumentedProvider(mock_provider, guarded_tools=guarded)
+
+    messages = [
+        {"role": "user", "content": "List the files in the home directory"},
+        {"role": "assistant", "content": "I'll do that for you."},
+        {"role": "user", "content": "Actually, show me /tmp instead"},
+    ]
+    await instrumented.chat(messages)
+
+    # The latest user message should be propagated to guarded_tools
+    assert guarded.user_intent == "Actually, show me /tmp instead"

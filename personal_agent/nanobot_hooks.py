@@ -136,15 +136,26 @@ class TokenBucket:
 class InstrumentedProvider:
     """Wraps an LLMProvider to log every LLM request and response."""
 
-    def __init__(self, inner, bucket: TokenBucket | None = None):
+    def __init__(self, inner, bucket: TokenBucket | None = None,
+                 guarded_tools: GuardedToolRegistry | None = None):
         self._inner = inner
         self._bucket = bucket
+        self._guarded_tools = guarded_tools
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
     async def chat(self, messages, tools=None, model=None,
                    max_tokens=4096, temperature=0.7):
+        # Update user intent for action review from the latest user message
+        if self._guarded_tools and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        self._guarded_tools.user_intent = content[:500]
+                        break
+
         # Rate-limit: wait if bucket is depleted
         if self._bucket:
             await self._bucket.wait()
@@ -195,5 +206,7 @@ def apply_guardrails(agent) -> None:
     tpm = int(os.environ.get("RATE_LIMIT_TPM", "0"))
     bucket = TokenBucket(tpm) if tpm > 0 else None
 
-    agent.tools = GuardedToolRegistry(agent.tools)
-    agent.provider = InstrumentedProvider(agent.provider, bucket=bucket)
+    guarded_tools = GuardedToolRegistry(agent.tools)
+    agent.tools = guarded_tools
+    agent.provider = InstrumentedProvider(agent.provider, bucket=bucket,
+                                         guarded_tools=guarded_tools)
