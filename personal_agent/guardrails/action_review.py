@@ -85,15 +85,24 @@ async def review_action(
         tool_args=json.dumps(tool_args, indent=2),
     )
 
-    response = await _get_client().post(
-        GROQ_URL,
-        json={
-            "model": REVIEW_MODEL,
-            "max_tokens": 200,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-    )
-    response.raise_for_status()
+    try:
+        response = await _get_client().post(
+            GROQ_URL,
+            json={
+                "model": REVIEW_MODEL,
+                "max_tokens": 200,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        response.raise_for_status()
+    except (httpx.HTTPError, httpx.StreamError) as exc:
+        # Groq unreachable or returned an error — fail open, log for review
+        return ReviewResult(
+            approved=True,
+            reason=f"Review unavailable ({type(exc).__name__}), allowing action",
+            skipped=True,
+        )
+
     text = response.json()["choices"][0]["message"]["content"]
 
     try:

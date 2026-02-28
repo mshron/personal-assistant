@@ -149,3 +149,20 @@ async def test_unparseable_response_blocks(httpx_mock):
     )
     assert not result.approved
     assert "Unparseable" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_groq_unavailable_fails_open(httpx_mock):
+    """If Groq is unreachable, the action should be allowed (fail open)."""
+    import httpx as _httpx
+    httpx_mock.add_exception(
+        _httpx.ConnectError("Connection refused"),
+        url=GROQ_URL,
+    )
+    result = await review_action(
+        user_intent="List files",
+        tool_name="exec",
+        tool_args={"command": "ls -la"},
+    )
+    assert result.approved
+    assert result.skipped
