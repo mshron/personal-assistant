@@ -98,6 +98,35 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 | `LOG_FILE` | Path for audit log JSONL |
 | `LOG_SERVICE_URL` | URL of log-service sidecar |
 
+## Debugging
+
+### Fly.io logs (stdout/stderr)
+
+```bash
+fly logs -a polynumeral-assistant --no-tail   # recent logs
+fly logs -a polynumeral-assistant              # stream live
+```
+
+Shows Zulip message receipt, startup, deploy errors, and `[guardrails]` stderr from `GuardedToolRegistry`. Does NOT show LLM calls or tool execution details.
+
+### Sidecar audit logs (detailed)
+
+The log-service sidecar writes structured JSONL to `/data/logs/agent.jsonl` on the persistent volume. This is the primary debugging tool — it records every LLM request/response, tool call/result, action review decision, and PromptGuard scan with timestamps.
+
+```bash
+fly ssh console -a polynumeral-assistant -C "tail -30 /data/logs/agent.jsonl"
+```
+
+Key event types: `llm_request`, `llm_response`, `tool_call`, `tool_result`, `action_review`, `promptguard_scan`, `promptguard_blocked`, `guardrail_error`.
+
+### Debugging checklist
+
+If the bot receives a message (shown in fly logs) but doesn't respond:
+1. Check sidecar logs for an `llm_request` — if absent, the message never reached the agent loop (nanobot routing issue, not guardrails)
+2. Check for `llm_response` with `finish_reason: "error"` — rate limit or API failure
+3. Check for `action_review` with `approved: false` — guardrail blocked the tool call
+4. Check for `guardrail_error` — unhandled exception in guardrails (fails open, logged to stderr)
+
 ## Dependencies
 
 Managed with `uv`. Key deps: `nanobot-ai`, `zulip`, `httpx`, `pynacl`. Dev deps: `pytest`, `pytest-asyncio`, `pytest-httpx`.
