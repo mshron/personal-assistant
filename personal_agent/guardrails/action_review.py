@@ -95,15 +95,21 @@ async def review_action(
             },
         )
         response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"]
     except (httpx.HTTPError, httpx.StreamError) as exc:
-        # Groq unreachable or returned an error — fail open, log for review
+        # Groq unreachable or returned an error — fail open
         return ReviewResult(
             approved=True,
             reason=f"Review unavailable ({type(exc).__name__}), allowing action",
             skipped=True,
         )
-
-    text = response.json()["choices"][0]["message"]["content"]
+    except Exception as exc:
+        # Unexpected error (bad response format, etc.) — fail open
+        return ReviewResult(
+            approved=True,
+            reason=f"Review error ({type(exc).__name__}: {exc}), allowing action",
+            skipped=True,
+        )
 
     try:
         result = json.loads(text)

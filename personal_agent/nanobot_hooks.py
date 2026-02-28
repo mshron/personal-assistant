@@ -9,6 +9,7 @@ Wraps ToolRegistry.execute and LLMProvider.chat to add:
 
 import asyncio
 import os
+import sys
 import time
 
 from personal_agent.guardrails.action_review import (
@@ -54,6 +55,17 @@ class GuardedToolRegistry:
         return getattr(self._inner, name)
 
     async def execute(self, name: str, params: dict) -> str:
+        try:
+            return await self._execute_guarded(name, params)
+        except Exception as exc:
+            # Last-resort catch so a guardrail bug never kills the agent loop
+            print(f"[guardrails] unhandled error in execute({name}): "
+                  f"{type(exc).__name__}: {exc}", file=sys.stderr)
+            await log_event("guardrail_error", tool=name,
+                            error=f"{type(exc).__name__}: {exc}")
+            return await self._inner.execute(name, params)
+
+    async def _execute_guarded(self, name: str, params: dict) -> str:
         await log_event("tool_call", tool=name, args=params)
 
         # Pre-execution: Action Review
