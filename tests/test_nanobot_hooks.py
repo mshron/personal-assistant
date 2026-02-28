@@ -64,6 +64,28 @@ async def test_malicious_content_blocked(mock_scan, mock_registry):
 
 @pytest.mark.asyncio
 @patch("personal_agent.nanobot_hooks.review_action")
+async def test_exec_tool_triggers_review(mock_review, mock_registry):
+    """The exec (shell) tool must go through action review."""
+    mock_review.return_value = ReviewResult(approved=True, reason="Aligned")
+    wrapped = wrap_tool_registry(mock_registry, user_intent="list files")
+    result = await wrapped.execute("exec", {"command": "ls -la"})
+    assert result == "tool result"
+    mock_review.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("personal_agent.nanobot_hooks.review_action")
+async def test_exec_tool_blocked_when_misaligned(mock_review, mock_registry):
+    """A misaligned exec command should be blocked."""
+    mock_review.return_value = ReviewResult(approved=False, reason="Suspicious command")
+    wrapped = wrap_tool_registry(mock_registry, user_intent="list files")
+    result = await wrapped.execute("exec", {"command": "rm -rf /"})
+    assert "blocked" in result.lower()
+    mock_registry.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("personal_agent.nanobot_hooks.review_action")
 async def test_proxy_passes_through_other_attrs(mock_review, mock_registry):
     """GuardedToolRegistry should proxy non-execute attributes to inner registry."""
     mock_registry.list_tools = MagicMock(return_value=["tool_a", "tool_b"])

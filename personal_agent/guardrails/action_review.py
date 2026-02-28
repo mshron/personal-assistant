@@ -1,9 +1,12 @@
-"""Layer 2: Pre-tool-call action review via Claude Haiku.
+"""Layer 2: Pre-tool-call action review via Groq.
 
-Before executing side-effecting tools, sends the user's intent and the
-proposed action to Claude Haiku for an alignment check. Flags suspicious
-patterns: unexpected domains, wrong recipients, high purchase amounts,
-data exfiltration.
+Before executing side-effecting tools or shell commands, sends the user's
+intent and the proposed action to a safety model for an alignment check.
+Flags suspicious patterns: unexpected domains, wrong recipients, high
+purchase amounts, data exfiltration, dangerous shell commands.
+
+Uses Groq's OpenAI-compatible API with the GPT OSS Safeguard 20B model
+by default — a safety-specialized model that follows custom policies.
 """
 
 import json
@@ -12,16 +15,17 @@ from dataclasses import dataclass
 
 import httpx
 
-ANTHROPIC_URL = os.environ.get(
-    "ANTHROPIC_API_URL", "https://api.anthropic.com/v1/messages"
+GROQ_URL = os.environ.get(
+    "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
 )
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-REVIEW_MODEL = os.environ.get("ACTION_REVIEW_MODEL", "claude-haiku-4-5-20241022")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+REVIEW_MODEL = os.environ.get("ACTION_REVIEW_MODEL", "openai/gpt-oss-safeguard-20b")
 
 SIDE_EFFECTING_TOOLS = frozenset({
     "send_email",
     "make_purchase",
     "run_claude_code",
+    "exec",
     # MCP-namespaced versions
     "mcp_email_send_email",
     "mcp_privacy_make_purchase",
@@ -54,9 +58,9 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        headers = {"anthropic-version": "2023-06-01"}
-        if ANTHROPIC_API_KEY:
-            headers["x-api-key"] = ANTHROPIC_API_KEY
+        headers = {}
+        if GROQ_API_KEY:
+            headers["Authorization"] = f"Bearer {GROQ_API_KEY}"
         _client = httpx.AsyncClient(timeout=15.0, headers=headers)
     return _client
 
@@ -82,7 +86,7 @@ async def review_action(
     )
 
     response = await _get_client().post(
-        ANTHROPIC_URL,
+        GROQ_URL,
         json={
             "model": REVIEW_MODEL,
             "max_tokens": 200,
@@ -90,7 +94,7 @@ async def review_action(
         },
     )
     response.raise_for_status()
-    text = response.json()["content"][0]["text"]
+    text = response.json()["choices"][0]["message"]["content"]
 
     try:
         result = json.loads(text)
@@ -99,5 +103,5 @@ async def review_action(
             reason=result.get("reason", "No reason given"),
         )
     except json.JSONDecodeError:
-        # If Haiku doesn't return valid JSON, block by default
+        # If the model doesn't return valid JSON, block by default
         return ReviewResult(approved=False, reason=f"Unparseable review response: {text[:200]}")

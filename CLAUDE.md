@@ -21,7 +21,7 @@ personal_agent/
   nanobot_hooks.py     # wires guardrails into nanobot's tool execution
   guardrails/
     promptguard.py     # Layer 1: Groq-hosted LlamaGuard prompt injection detection
-    action_review.py   # Layer 2: LLM-based action review before tool execution
+    action_review.py   # Layer 2: Groq-hosted action review before tool execution
   logging/
     client.py          # async log client → log-service sidecar
 ```
@@ -68,7 +68,7 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 - `ANTHROPIC_API_KEY` — direct API key (no tokenizer)
 - `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials
 - `ZULIP_STREAMS` — comma-separated streams for non-mention monitoring
-- `GROQ_API_KEY` — for PromptGuard (LlamaGuard)
+- `GROQ_API_KEY` — for PromptGuard (LlamaGuard) and Action Review (Safeguard 20B)
 - `KAGI_API_KEY` — for Kagi search/summarizer MCP tools
 
 ## Zulip channel behavior
@@ -91,7 +91,8 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 | `ZULIP_API_KEY` | Bot API key |
 | `ZULIP_STREAMS` | Streams to monitor (comma-separated) |
 | `ZULIP_ALLOW_FROM` | Optional sender ID allowlist |
-| `GROQ_API_KEY` | For PromptGuard layer |
+| `GROQ_API_KEY` | For PromptGuard + Action Review (both layers) |
+| `ACTION_REVIEW_MODEL` | Groq model for action review (default: `openai/gpt-oss-safeguard-20b`) |
 | `KAGI_API_KEY` | For Kagi search/summarizer (MCP) |
 | `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
 | `LOG_FILE` | Path for audit log JSONL |
