@@ -93,7 +93,7 @@ async def review_action(tool_name: str, tool_args: dict) -> ReviewResult:
             GROQ_URL,
             json={
                 "model": REVIEW_MODEL,
-                "max_tokens": 512,
+                "max_tokens": 8192,
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
