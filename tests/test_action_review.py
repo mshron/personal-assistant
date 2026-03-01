@@ -136,8 +136,8 @@ async def test_exec_misaligned_blocked(mock_groq_misaligned):
 
 
 @pytest.mark.asyncio
-async def test_unparseable_response_fails_open(httpx_mock):
-    """If the model returns non-JSON, the action should be allowed (fail open)."""
+async def test_unparseable_response_blocks(httpx_mock):
+    """If the model returns non-JSON, the action should be blocked."""
     httpx_mock.add_response(
         url=GROQ_URL,
         json=_groq_response("I cannot determine if this is safe."),
@@ -147,26 +147,8 @@ async def test_unparseable_response_fails_open(httpx_mock):
         tool_name="send_email",
         tool_args={"to": "alice@example.com"},
     )
-    assert result.approved
-    assert result.skipped
+    assert not result.approved
     assert "Unparseable" in result.reason
-
-
-@pytest.mark.asyncio
-async def test_empty_response_fails_open(httpx_mock):
-    """If the model returns empty content, the action should be allowed (fail open)."""
-    httpx_mock.add_response(
-        url=GROQ_URL,
-        json=_groq_response(""),
-    )
-    result = await review_action(
-        user_intent="List files",
-        tool_name="exec",
-        tool_args={"command": "ls -la"},
-    )
-    assert result.approved
-    assert result.skipped
-    assert "empty" in result.reason
 
 
 @pytest.mark.asyncio

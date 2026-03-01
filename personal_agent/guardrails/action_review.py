@@ -111,14 +111,6 @@ async def review_action(
             skipped=True,
         )
 
-    # Empty or null response — model glitch, fail open
-    if not text or not text.strip():
-        return ReviewResult(
-            approved=True,
-            reason="Review model returned empty response, allowing action",
-            skipped=True,
-        )
-
     try:
         result = json.loads(text)
         return ReviewResult(
@@ -126,9 +118,5 @@ async def review_action(
             reason=result.get("reason", "No reason given"),
         )
     except json.JSONDecodeError:
-        # Non-empty but not valid JSON — model format issue, fail open
-        return ReviewResult(
-            approved=True,
-            reason=f"Unparseable review response (allowing action): {text[:200]}",
-            skipped=True,
-        )
+        # If the model doesn't return valid JSON, block by default
+        return ReviewResult(approved=False, reason=f"Unparseable review response: {text[:200]}")
