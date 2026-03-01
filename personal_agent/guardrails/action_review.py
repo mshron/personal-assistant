@@ -86,6 +86,9 @@ async def review_action(
         tool_args=json.dumps(tool_args, indent=2),
     )
 
+    print(f"[action_review] reviewing {tool_name} "
+          f"model={REVIEW_MODEL} intent={user_intent[:80]!r}", file=sys.stderr)
+
     try:
         response = await _get_client().post(
             GROQ_URL,
@@ -98,14 +101,13 @@ async def review_action(
         response.raise_for_status()
         body = response.json()
         text = body["choices"][0]["message"]["content"]
-        if not text:
-            # Log the full response for debugging empty content
-            finish = body["choices"][0].get("finish_reason", "unknown")
-            print(f"[action_review] empty content from Groq: "
-                  f"model={REVIEW_MODEL} status={response.status_code} "
-                  f"finish_reason={finish}", file=sys.stderr)
+        finish = body["choices"][0].get("finish_reason", "unknown")
+        print(f"[action_review] groq response: status={response.status_code} "
+              f"finish={finish} content={text[:200]!r}", file=sys.stderr)
     except (httpx.HTTPError, httpx.StreamError) as exc:
         # Groq unreachable or returned an error — fail open
+        print(f"[action_review] groq error: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
         return ReviewResult(
             approved=True,
             reason=f"Review unavailable ({type(exc).__name__}), allowing action",
@@ -113,6 +115,8 @@ async def review_action(
         )
     except Exception as exc:
         # Unexpected error (bad response format, etc.) — fail open
+        print(f"[action_review] unexpected error: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
         return ReviewResult(
             approved=True,
             reason=f"Review error ({type(exc).__name__}: {exc}), allowing action",
@@ -121,10 +125,12 @@ async def review_action(
 
     try:
         result = json.loads(text)
-        return ReviewResult(
-            approved=result.get("aligned", False),
-            reason=result.get("reason", "No reason given"),
-        )
+        approved = result.get("aligned", False)
+        reason = result.get("reason", "No reason given")
+        print(f"[action_review] result: approved={approved} reason={reason!r}",
+              file=sys.stderr)
+        return ReviewResult(approved=approved, reason=reason)
     except json.JSONDecodeError:
         # If the model doesn't return valid JSON, block by default
+        print(f"[action_review] unparseable response, blocking", file=sys.stderr)
         return ReviewResult(approved=False, reason=f"Unparseable review response: {text[:200]}")
