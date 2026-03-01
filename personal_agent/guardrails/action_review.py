@@ -11,6 +11,7 @@ by default — a safety-specialized model that follows custom policies.
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -95,7 +96,14 @@ async def review_action(
             },
         )
         response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"]
+        body = response.json()
+        text = body["choices"][0]["message"]["content"]
+        if not text:
+            # Log the full response for debugging empty content
+            finish = body["choices"][0].get("finish_reason", "unknown")
+            print(f"[action_review] empty content from Groq: "
+                  f"model={REVIEW_MODEL} status={response.status_code} "
+                  f"finish_reason={finish}", file=sys.stderr)
     except (httpx.HTTPError, httpx.StreamError) as exc:
         # Groq unreachable or returned an error — fail open
         return ReviewResult(
