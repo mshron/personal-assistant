@@ -127,6 +127,10 @@ If the bot receives a message (shown in fly logs) but doesn't respond:
 3. Check for `action_review` with `approved: false` — guardrail blocked the tool call
 4. Check for `guardrail_error` — unhandled exception in guardrails (fails open, logged to stderr)
 
+## Git push
+
+The GitHub SSH key lives in 1Password. If the user has stepped away and `git push` fails with "Permission denied (publickey)", don't troubleshoot — just note that the push is pending and move on. The user will unlock 1Password and push when they return.
+
 ## Dependencies
 
 Managed with `uv`. Key deps: `nanobot-ai`, `zulip`, `httpx`, `pynacl`. Dev deps: `pytest`, `pytest-asyncio`, `pytest-httpx`.
