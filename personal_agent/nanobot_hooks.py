@@ -43,6 +43,16 @@ def _truncate(s: str) -> str:
     return s[:_MAX_LOG_LEN] + f"... [truncated, {len(s)} chars total]"
 
 
+def _extract_intent(content: str) -> str:
+    """Extract user intent from a message for action review.
+
+    The actual user request is typically at the end of the content
+    (channels may prepend conversation history). Take the last 500
+    chars to keep the review prompt focused and model-friendly.
+    """
+    return content.strip()[-500:]
+
+
 class GuardedToolRegistry:
     """Wraps a ToolRegistry to add guardrail checks around tool execution."""
 
@@ -153,7 +163,7 @@ class InstrumentedProvider:
                 if msg.get("role") == "user":
                     content = msg.get("content", "")
                     if isinstance(content, str) and content.strip():
-                        self._guarded_tools.user_intent = content[:500]
+                        self._guarded_tools.user_intent = _extract_intent(content)
                         break
 
         # Rate-limit: wait if bucket is depleted

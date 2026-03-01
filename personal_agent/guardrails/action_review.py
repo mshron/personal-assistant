@@ -94,7 +94,7 @@ async def review_action(
             GROQ_URL,
             json={
                 "model": REVIEW_MODEL,
-                "max_tokens": 200,
+                "max_tokens": 512,
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
