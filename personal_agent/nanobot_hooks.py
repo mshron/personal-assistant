@@ -1,7 +1,7 @@
 """All Nanobot-internal coupling lives here.
 
 Wraps ToolRegistry.execute and LLMProvider.chat to add:
-- Pre-execution: Action Review for side-effecting tools
+- Pre-execution: Safety review for side-effecting tools
 - Post-execution: PromptGuard scanning for external content tools
 - Full instrumentation: every LLM call, tool call, and result is logged
 - Token-bucket rate limiting for Anthropic API calls
@@ -43,22 +43,11 @@ def _truncate(s: str) -> str:
     return s[:_MAX_LOG_LEN] + f"... [truncated, {len(s)} chars total]"
 
 
-def _extract_intent(content: str) -> str:
-    """Extract user intent from a message for action review.
-
-    The actual user request is typically at the end of the content
-    (channels may prepend conversation history). Take the last 500
-    chars to keep the review prompt focused and model-friendly.
-    """
-    return content.strip()[-500:]
-
-
 class GuardedToolRegistry:
     """Wraps a ToolRegistry to add guardrail checks around tool execution."""
 
-    def __init__(self, inner, user_intent: str = ""):
+    def __init__(self, inner):
         self._inner = inner
-        self.user_intent = user_intent
 
     def __getattr__(self, name):
         """Proxy all attributes except execute to the inner registry."""
@@ -78,9 +67,9 @@ class GuardedToolRegistry:
     async def _execute_guarded(self, name: str, params: dict) -> str:
         await log_event("tool_call", tool=name, args=params)
 
-        # Pre-execution: Action Review
+        # Pre-execution: Safety Review
         if name in SIDE_EFFECTING_TOOLS:
-            review = await review_action(self.user_intent, name, params)
+            review = await review_action(name, params)
             await log_event("action_review", tool=name,
                             approved=review.approved, reason=review.reason)
             if not review.approved:
@@ -146,26 +135,15 @@ class TokenBucket:
 class InstrumentedProvider:
     """Wraps an LLMProvider to log every LLM request and response."""
 
-    def __init__(self, inner, bucket: TokenBucket | None = None,
-                 guarded_tools: GuardedToolRegistry | None = None):
+    def __init__(self, inner, bucket: TokenBucket | None = None):
         self._inner = inner
         self._bucket = bucket
-        self._guarded_tools = guarded_tools
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
     async def chat(self, messages, tools=None, model=None,
                    max_tokens=4096, temperature=0.7):
-        # Update user intent for action review from the latest user message
-        if self._guarded_tools and messages:
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
-                    if isinstance(content, str) and content.strip():
-                        self._guarded_tools.user_intent = _extract_intent(content)
-                        break
-
         # Rate-limit: wait if bucket is depleted
         if self._bucket:
             await self._bucket.wait()
@@ -201,9 +179,9 @@ class InstrumentedProvider:
         return response
 
 
-def wrap_tool_registry(registry, user_intent: str = "") -> GuardedToolRegistry:
+def wrap_tool_registry(registry) -> GuardedToolRegistry:
     """Create a guarded wrapper around a ToolRegistry."""
-    return GuardedToolRegistry(registry, user_intent)
+    return GuardedToolRegistry(registry)
 
 
 def apply_guardrails(agent) -> None:
@@ -216,7 +194,5 @@ def apply_guardrails(agent) -> None:
     tpm = int(os.environ.get("RATE_LIMIT_TPM", "0"))
     bucket = TokenBucket(tpm) if tpm > 0 else None
 
-    guarded_tools = GuardedToolRegistry(agent.tools)
-    agent.tools = guarded_tools
-    agent.provider = InstrumentedProvider(agent.provider, bucket=bucket,
-                                         guarded_tools=guarded_tools)
+    agent.tools = GuardedToolRegistry(agent.tools)
+    agent.provider = InstrumentedProvider(agent.provider, bucket=bucket)
