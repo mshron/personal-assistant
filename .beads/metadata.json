@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "personal_agent",
+  "project_id": "d06e2251-8d9e-4808-ac2a-46763c1c0e1d"
+}

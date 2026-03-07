@@ -13,3 +13,7 @@ __pycache__/
 data/
 *.swp
 tokenizer/secrets.env
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
