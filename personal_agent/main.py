@@ -26,6 +26,15 @@ def _build_agent():
     if kagi_key and "kagi" in config.tools.mcp_servers:
         config.tools.mcp_servers["kagi"].env["KAGI_API_KEY"] = kagi_key
 
+    # Email MCP server needs Fastmail credentials and subscription state path.
+    if "email" in config.tools.mcp_servers:
+        fastmail_token = os.environ.get("FASTMAIL_API_TOKEN", "")
+        if fastmail_token:
+            config.tools.mcp_servers["email"].env["FASTMAIL_API_TOKEN"] = fastmail_token
+        subs_file = os.environ.get("EMAIL_SUBSCRIPTIONS_FILE", "")
+        if subs_file:
+            config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file
+
     # Tokenizer mode: API key is inside the sealed secret, routed through proxy.
     # Direct mode: API key from environment, direct HTTPS to Anthropic.
     tokenized_anthropic = os.environ.get("TOKENIZED_ANTHROPIC", "")
