@@ -233,6 +233,29 @@ async def test_mention_in_any_stream_works(tmp_path):
     assert msg.chat_id == "random:greetings"
 
 
+async def test_engaged_topic_in_non_monitored_stream(tmp_path):
+    """Follow-ups in engaged topics work even in non-monitored streams."""
+    config = _make_config(streams=["general"])
+    channel = _make_channel(config, tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    # @mention in "random" (not in configured streams) engages the topic
+    await _call_from_thread(channel, _stream_message(
+        display_recipient="random", content="@**Bot** hey"
+    ))
+    channel.bus.publish_inbound.assert_awaited_once()
+    channel.bus.publish_inbound.reset_mock()
+
+    # Follow-up without @mention in the same non-monitored stream topic
+    await _call_from_thread(channel, _stream_message(
+        display_recipient="random", content="follow up without mention"
+    ))
+    channel.bus.publish_inbound.assert_awaited_once()
+    msg = channel.bus.publish_inbound.call_args[0][0]
+    assert msg.content == "follow up without mention"
+    assert msg.chat_id == "random:greetings"
+
+
 async def test_mention_stripped(tmp_path):
     channel = _make_channel(tmp_path=tmp_path)
     channel._loop = asyncio.get_running_loop()
@@ -430,3 +453,172 @@ async def test_send_dm(tmp_path):
         "to": [42],
         "content": "hi back",
     })
+
+
+# -- Reaction handling tests ---------------------------------------------------
+
+
+def _reaction_event(**overrides) -> dict:
+    """Build a mock Zulip reaction event."""
+    defaults = dict(
+        type="reaction",
+        op="add",
+        emoji_name="+1",
+        user_id=42,
+        user={"email": "alice@test.com"},
+        message_id=999,
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+def _bot_message_response(**overrides) -> dict:
+    """Build a mock message as returned by GET /messages/{id} for a bot message."""
+    defaults = dict(
+        id=999,
+        type="stream",
+        sender_email="bot@test.zulipchat.com",
+        display_recipient="general",
+        subject="greetings",
+        content="1. marketing@store.com (12 emails)\n2. news@example.com (8 emails)",
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+async def _call_reaction_from_thread(channel, event):
+    """Call _on_reaction_sync from a thread, matching production behavior."""
+    await asyncio.to_thread(channel._on_reaction_sync, event)
+
+
+async def test_thumbs_up_reaction_forwards_approval(tmp_path):
+    """A thumbs-up on a bot message forwards an approval to the agent bus."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    bot_msg = _bot_message_response()
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "success",
+        "messages": [bot_msg],
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event())
+
+    channel.bus.publish_inbound.assert_awaited_once()
+    msg = channel.bus.publish_inbound.call_args[0][0]
+    assert msg.channel == "zulip"
+    assert msg.chat_id == "general:greetings"
+    assert msg.sender_id == "42"
+    assert "approved unsubscription" in msg.content
+    assert "marketing@store.com" in msg.content
+    assert "news@example.com" in msg.content
+    assert "email_unsubscribe" in msg.content
+
+
+async def test_thumbs_up_emoji_name_variants(tmp_path):
+    """Both '+1' and 'thumbs_up' emoji names are recognized."""
+    for emoji_name in ["+1", "thumbs_up", "thumbsup"]:
+        channel = _make_channel(tmp_path=tmp_path)
+        channel._loop = asyncio.get_running_loop()
+
+        bot_msg = _bot_message_response()
+        channel._client.get_messages = MagicMock(return_value={
+            "result": "success",
+            "messages": [bot_msg],
+        })
+
+        await _call_reaction_from_thread(
+            channel, _reaction_event(emoji_name=emoji_name)
+        )
+        channel.bus.publish_inbound.assert_awaited_once()
+
+
+async def test_non_thumbs_up_reaction_ignored(tmp_path):
+    """Reactions other than thumbs-up are ignored."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    channel._on_reaction_sync(_reaction_event(emoji_name="heart"))
+    channel.bus.publish_inbound.assert_not_awaited()
+
+
+async def test_reaction_remove_ignored(tmp_path):
+    """Reaction removal events (op='remove') are ignored."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    channel._on_reaction_sync(_reaction_event(op="remove"))
+    channel.bus.publish_inbound.assert_not_awaited()
+
+
+async def test_reaction_on_non_bot_message_ignored(tmp_path):
+    """Thumbs-up on a message NOT sent by the bot is ignored."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    non_bot_msg = _bot_message_response(sender_email="alice@test.com")
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "success",
+        "messages": [non_bot_msg],
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event())
+    channel.bus.publish_inbound.assert_not_awaited()
+
+
+async def test_reaction_from_non_allowed_sender_ignored(tmp_path):
+    """Reactions from senders not in allow_from are ignored."""
+    config = _make_config(allow_from=["99"])
+    channel = _make_channel(config, tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    # user_id=42 is not in allow_from=["99"]
+    channel._on_reaction_sync(_reaction_event(user_id=42))
+    channel.bus.publish_inbound.assert_not_awaited()
+
+
+async def test_reaction_allowed_when_no_allow_from(tmp_path):
+    """When allow_from is empty, all senders' reactions are processed."""
+    config = _make_config(allow_from=[])
+    channel = _make_channel(config, tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    bot_msg = _bot_message_response()
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "success",
+        "messages": [bot_msg],
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event(user_id=42))
+    channel.bus.publish_inbound.assert_awaited_once()
+
+
+async def test_reaction_metadata_includes_message_id(tmp_path):
+    """The forwarded message metadata includes the reacted-to message ID."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    bot_msg = _bot_message_response()
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "success",
+        "messages": [bot_msg],
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event())
+
+    msg = channel.bus.publish_inbound.call_args[0][0]
+    assert msg.metadata["zulip"]["reaction_to_message_id"] == 999
+
+
+async def test_reaction_fetch_message_failure_ignored(tmp_path):
+    """If fetching the original message fails, the reaction is ignored gracefully."""
+    channel = _make_channel(tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "error",
+        "msg": "not found",
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event())
+    channel.bus.publish_inbound.assert_not_awaited()

@@ -20,6 +20,11 @@
                 "command": "uv",
                 "args": ["tool", "run", "kagimcp"],
                 "env": {}
+            },
+            "email": {
+                "command": "uv",
+                "args": ["run", "python", "-m", "personal_agent.email.tools"],
+                "env": {}
             }
         }
     },

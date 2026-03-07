@@ -196,10 +196,12 @@ class ZulipChannel(BaseChannel):
             def event_callback(event: dict[str, Any]) -> None:
                 if event["type"] == "message":
                     self._on_message_sync(event["message"])
+                elif event["type"] == "reaction":
+                    self._on_reaction_sync(event)
 
             self._client.call_on_each_event(
                 event_callback,
-                event_types=["message"],
+                event_types=["message", "reaction"],
                 narrow=[],
                 all_public_streams=True,
             )
@@ -243,10 +245,12 @@ class ZulipChannel(BaseChannel):
             )
             if has_mention:
                 newly_engaged = self._engage_topic(chat_id)
+            elif self._is_engaged(chat_id):
+                pass  # Engaged topics work in any stream
             elif not in_monitored_stream:
                 # Non-mention in a stream we don't monitor — skip
                 return
-            elif not self._is_engaged(chat_id):
+            else:
                 # Non-mention, monitored stream, but topic not engaged — skip
                 return
 
@@ -297,6 +301,106 @@ class ZulipChannel(BaseChannel):
             future.result(timeout=30)
         except Exception as e:
             logger.error(f"Error handling Zulip message: {e}")
+
+    def _fetch_message(self, message_id: int) -> dict[str, Any] | None:
+        """Fetch a single message by ID from the Zulip API."""
+        result = self._client.get_messages({
+            "anchor": message_id,
+            "num_before": 0,
+            "num_after": 0,
+            "narrow": [{"operator": "id", "operand": str(message_id)}],
+        })
+        if result.get("result") != "success":
+            logger.warning(f"Failed to fetch message {message_id}: {result}")
+            return None
+        messages = result.get("messages", [])
+        if not messages:
+            logger.warning(f"Message {message_id} not found")
+            return None
+        return messages[0]
+
+    # Emoji names Zulip uses for the thumbs-up reaction
+    _THUMBS_UP_NAMES = frozenset({"+1", "thumbs_up", "thumbsup"})
+
+    def _on_reaction_sync(self, event: dict[str, Any]) -> None:
+        """Called for each reaction event (in the listener thread)."""
+        # Only handle "add" operations (not removal)
+        if event.get("op") != "add":
+            return
+
+        emoji_name = event.get("emoji_name", "")
+        if emoji_name not in self._THUMBS_UP_NAMES:
+            return
+
+        # Don't process the bot's own reactions
+        user_id = event.get("user_id")
+        if str(user_id) == str(self._client.email):
+            return
+
+        # Check allow_from if configured
+        sender_id = str(user_id)
+        if self.config.allow_from and sender_id not in self.config.allow_from:
+            logger.warning(f"Reaction from non-allowed sender {sender_id}, ignoring")
+            return
+
+        message_id = event.get("message_id")
+        if not message_id:
+            return
+
+        # Fetch the original message to check if it's from the bot
+        original = self._fetch_message(message_id)
+        if original is None:
+            return
+
+        # Only process reactions on bot messages
+        if original.get("sender_email") != self.config.email:
+            logger.debug(
+                f"Reaction on non-bot message {message_id}, ignoring"
+            )
+            return
+
+        original_content = original.get("content", "")
+        msg_type = original.get("type", "")
+
+        # Build chat_id from the original message context
+        if msg_type == "stream":
+            stream = original.get("display_recipient", "")
+            topic = original.get("subject", "")
+            chat_id = f"{stream}:{topic}"
+        else:
+            chat_id = f"dm:{user_id}"
+
+        # Compose the approval message for the agent
+        content = (
+            f"The user has approved unsubscription for all candidates in this message. "
+            f"Please proceed with email_unsubscribe for each sender listed below.\n\n"
+            f"Original bot message:\n{original_content}"
+        )
+
+        metadata = {
+            "zulip": {
+                "type": msg_type,
+                "topic": original.get("subject"),
+                "stream": original.get("display_recipient") if msg_type == "stream" else None,
+                "sender_email": event.get("user", {}).get("email"),
+                "reaction_to_message_id": message_id,
+            }
+        }
+
+        # Bridge from sync thread to async event loop
+        future = asyncio.run_coroutine_threadsafe(
+            self._handle_message(
+                sender_id=sender_id,
+                chat_id=chat_id,
+                content=content,
+                metadata=metadata,
+            ),
+            self._loop,
+        )
+        try:
+            future.result(timeout=30)
+        except Exception as e:
+            logger.error(f"Error handling Zulip reaction: {e}")
 
     async def stop(self) -> None:
         self._running = False
