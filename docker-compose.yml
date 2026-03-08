@@ -32,7 +32,6 @@ services:
     environment:
       - CRED_PROXY_BASE=http://credential-proxy:8080
       - LOG_SERVICE_URL=http://log-service:8081/log
-      - KAGI_API_KEY=${KAGI_API_KEY}
       - ZULIP_SITE=${ZULIP_SITE}
       - ZULIP_EMAIL=${ZULIP_EMAIL}
       - ZULIP_API_KEY=${ZULIP_API_KEY}

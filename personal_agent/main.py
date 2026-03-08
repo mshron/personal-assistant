@@ -27,17 +27,11 @@ def _build_agent():
         print("Error: CRED_PROXY_BASE is required.")
         sys.exit(1)
 
-    # Kagi MCP server (kagimcp).
-    # NOTE: kagimcp uses kagiapi.KagiClient which hardcodes
-    # BASE_URL = "https://kagi.com/api/v0" as a class variable with no env
-    # var override. The credential proxy's reverse-proxy approach cannot work
-    # here — kagimcp will always talk directly to kagi.com regardless of env.
-    # Until kagimcp adds base URL support or we use an HTTP_PROXY-based
-    # forward proxy (see personal-agent-zlf), the API key must be injected
-    # directly even when CRED_PROXY_BASE is set.
-    kagi_key = os.environ.get("KAGI_API_KEY", "")
-    if kagi_key and "kagi" in config.tools.mcp_servers:
-        config.tools.mcp_servers["kagi"].env["KAGI_API_KEY"] = kagi_key
+    # Kagi MCP server — routes through credential proxy.
+    if "kagi" in config.tools.mcp_servers:
+        config.tools.mcp_servers["kagi"].env["KAGI_API_BASE"] = (
+            f"{cred_proxy_base.rstrip('/')}/kagi"
+        )
 
     # Email MCP server needs Fastmail credentials and subscription state path.
     if "email" in config.tools.mcp_servers:

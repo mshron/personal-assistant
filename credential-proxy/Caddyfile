@@ -24,9 +24,9 @@
 	}
 
 	handle_path /kagi/* {
-		reverse_proxy https://api.kagi.com {
-			header_up Authorization "Bearer {env.KAGI_API_KEY}"
-			header_up Host api.kagi.com
+		reverse_proxy https://kagi.com {
+			header_up Authorization "Bot {env.KAGI_API_KEY}"
+			header_up Host kagi.com
 			header_down -Server
 		}
 	}

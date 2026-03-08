@@ -78,7 +78,6 @@ Key secrets (set on the credential proxy, not the agent):
 
 Agent-side secrets:
 - `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials (not proxied)
-- `KAGI_API_KEY` — also needed on agent (kagimcp hardcodes base URL, see exception below)
 
 ## Zulip channel behavior
 
@@ -95,9 +94,7 @@ Agent-side secrets:
 
 `CRED_PROXY_BASE` is required. It points to a Caddy reverse proxy that holds all real API tokens — `polynumeral-cred-proxy` on Fly.io in production, or the `credential-proxy` docker-compose service locally. The agent sends requests to the proxy, which injects auth headers and forwards to the real APIs. This is defense-in-depth: even if the agent is compromised via prompt injection, it cannot exfiltrate credentials.
 
-**Exception**: kagimcp hardcodes its base URL — it still requires `KAGI_API_KEY` directly until the forward proxy fallback is implemented (see `personal-agent-zlf`).
-
-**When adding new external API integrations**: Add a route in `credential-proxy/Caddyfile`, then have the client code derive its base URL from `CRED_PROXY_BASE`. No direct API key fallbacks.
+**When adding new external API integrations**: Add a route in `credential-proxy/Caddyfile`, then have the client code derive its base URL from `CRED_PROXY_BASE`. No direct API key fallbacks. See `docs/credential-proxy-options.md` for handling third-party libraries that hardcode URLs.
 
 ## Key env vars
 
@@ -112,7 +109,7 @@ Agent-side secrets:
 | `ZULIP_API_KEY` | Bot API key |
 | `ZULIP_STREAMS` | Streams to monitor (comma-separated) |
 | `ZULIP_ALLOW_FROM` | Optional sender ID allowlist |
-| `KAGI_API_KEY` | For Kagi search/summarizer (kagimcp hardcodes base URL) |
+| `ACTION_REVIEW_MODEL` | Groq model for action review (default: `openai/gpt-oss-safeguard-20b`) |
 | `EMAIL_SUBSCRIPTIONS_FILE` | Path for subscription state (default: `/data/email_subscriptions.json`) |
 | `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
 | `LOG_FILE` | Path for audit log JSONL |
