@@ -17,10 +17,15 @@ mcp = FastMCP("email")
 
 
 def _get_provider() -> FastmailProvider:
+    api_base = os.environ.get("FASTMAIL_API_BASE", "")
     token = os.environ.get("FASTMAIL_API_TOKEN", "")
-    if not token:
-        raise RuntimeError("FASTMAIL_API_TOKEN environment variable is not set")
-    return FastmailProvider(token)
+    if api_base:
+        return FastmailProvider(api_base=api_base)
+    if token:
+        return FastmailProvider(token=token)
+    raise RuntimeError(
+        "Either FASTMAIL_API_BASE or FASTMAIL_API_TOKEN environment variable must be set"
+    )
 
 
 def _get_store() -> SubscriptionStore:

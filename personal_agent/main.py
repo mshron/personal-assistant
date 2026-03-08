@@ -22,6 +22,16 @@ def _build_agent():
     # Inject MCP server env vars that can't be set statically in JSON.
     # Nanobot's MCP subprocess only inherits a whitelist (HOME, PATH, etc.),
     # so secrets must be passed explicitly via the env dict.
+    cred_proxy_base = os.environ.get("CRED_PROXY_BASE", "")
+
+    # Kagi MCP server (kagimcp).
+    # NOTE: kagimcp uses kagiapi.KagiClient which hardcodes
+    # BASE_URL = "https://kagi.com/api/v0" as a class variable with no env
+    # var override. The credential proxy's reverse-proxy approach cannot work
+    # here — kagimcp will always talk directly to kagi.com regardless of env.
+    # Until kagimcp adds base URL support or we use an HTTP_PROXY-based
+    # forward proxy (see personal-agent-zlf), the API key must be injected
+    # directly even when CRED_PROXY_BASE is set.
     kagi_key = os.environ.get("KAGI_API_KEY", "")
     if kagi_key and "kagi" in config.tools.mcp_servers:
         config.tools.mcp_servers["kagi"].env["KAGI_API_KEY"] = kagi_key
@@ -35,14 +45,19 @@ def _build_agent():
         if subs_file:
             config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("Error: Set ANTHROPIC_API_KEY.")
-        sys.exit(1)
+    if cred_proxy_base:
+        api_key = "proxy"
+        api_base = f"{cred_proxy_base.rstrip('/')}/anthropic"
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        api_base = None
+        if not api_key:
+            print("Error: Set ANTHROPIC_API_KEY or CRED_PROXY_BASE.")
+            sys.exit(1)
 
     provider = LiteLLMProvider(
         api_key=api_key,
-        api_base=None,
+        api_base=api_base,
         default_model=config.agents.defaults.model,
         extra_headers=None,
         provider_name="anthropic",

@@ -1,0 +1,33 @@
+:8080 {
+	handle_path /anthropic/* {
+		reverse_proxy https://api.anthropic.com {
+			header_up x-api-key {env.ANTHROPIC_API_KEY}
+			header_up Host api.anthropic.com
+			header_down -Server
+		}
+	}
+
+	handle_path /fastmail/* {
+		reverse_proxy https://api.fastmail.com {
+			header_up Authorization "Bearer {env.FASTMAIL_API_TOKEN}"
+			header_up Host api.fastmail.com
+			header_down -Server
+		}
+	}
+
+	handle_path /groq/* {
+		reverse_proxy https://api.groq.com {
+			header_up Authorization "Bearer {env.GROQ_API_KEY}"
+			header_up Host api.groq.com
+			header_down -Server
+		}
+	}
+
+	handle_path /kagi/* {
+		reverse_proxy https://api.kagi.com {
+			header_up Authorization "Bearer {env.KAGI_API_KEY}"
+			header_up Host api.kagi.com
+			header_down -Server
+		}
+	}
+}

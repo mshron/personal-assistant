@@ -17,10 +17,15 @@ from dataclasses import dataclass
 
 import httpx
 
-GROQ_URL = os.environ.get(
-    "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
-)
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+_CRED_PROXY_BASE = os.environ.get("CRED_PROXY_BASE", "")
+if _CRED_PROXY_BASE:
+    GROQ_URL = f"{_CRED_PROXY_BASE.rstrip('/')}/groq/openai/v1/chat/completions"
+    GROQ_API_KEY = ""  # Proxy handles auth
+else:
+    GROQ_URL = os.environ.get(
+        "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
+    )
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 PROMPTGUARD_MODEL = os.environ.get(
     "PROMPTGUARD_MODEL", "meta-llama/llama-prompt-guard-2-86m"
 )

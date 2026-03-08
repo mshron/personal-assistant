@@ -54,7 +54,7 @@ Example for Fastmail:
 - FastmailProvider: accept `api_base` parameter, default to direct URL for local dev
 - LiteLLM/Anthropic: use `api_base` pointing to proxy
 - Email MCP server: accept FASTMAIL_API_BASE instead of FASTMAIL_API_TOKEN
-- Kagi MCP server: may need wrapper or config change to route through proxy
+- Kagi MCP server: CANNOT use reverse proxy. kagimcp uses kagiapi.KagiClient which hardcodes `BASE_URL = "https://kagi.com/api/v0"` as a class variable — no env var override exists. Requires either an HTTP forward proxy (HTTP_PROXY/HTTPS_PROXY) that intercepts kagi.com requests, or a fork/wrapper of kagimcp.
 - main.py: inject proxy base URLs instead of tokens into MCP server env
 
 ## Fly Deployment

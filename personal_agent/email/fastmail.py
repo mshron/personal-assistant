@@ -4,25 +4,38 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from personal_agent.email.provider import EmailProvider, EmailSummary
 
-_SESSION_URL = "https://api.fastmail.com/jmap/session"
+_FASTMAIL_SESSION_URL = "https://api.fastmail.com/jmap/session"
 
 
 class FastmailProvider(EmailProvider):
     """Fastmail JMAP-based email provider.
 
-    Parameters
-    ----------
-    token:
-        A Fastmail API token (bearer token) with appropriate scopes.
+    Supports two modes:
+
+    * **Direct mode** – pass *token* to authenticate with Fastmail directly.
+    * **Proxy mode** – pass *api_base* (e.g.
+      ``http://polynumeral-cred-proxy.flycast:8080/fastmail``) to route
+      requests through a credential proxy that injects the auth header.
+
+    At least one of *token* or *api_base* must be provided.
     """
 
-    def __init__(self, token: str) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        api_base: str | None = None,
+    ) -> None:
+        if not token and not api_base:
+            raise ValueError("Either token or api_base must be provided")
         self._token = token
+        self._api_base = api_base.rstrip("/") if api_base else None
+        self._proxy_mode = api_base is not None
         self._account_id: str | None = None
         self._api_url: str | None = None
 
@@ -31,22 +44,35 @@ class FastmailProvider(EmailProvider):
     # ------------------------------------------------------------------
 
     def _auth_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if not self._proxy_mode:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
+
+    def _session_url(self) -> str:
+        if self._proxy_mode:
+            return f"{self._api_base}/jmap/session"
+        return _FASTMAIL_SESSION_URL
+
+    def _rewrite_api_url(self, api_url: str) -> str:
+        """In proxy mode, rewrite the Fastmail apiUrl to go through the proxy."""
+        if not self._proxy_mode:
+            return api_url
+        # Replace the scheme+host from the real apiUrl with the proxy base.
+        parsed = urlparse(api_url)
+        return f"{self._api_base}{parsed.path}"
 
     async def _ensure_session(self) -> None:
         """Discover JMAP session if not already cached."""
         if self._account_id and self._api_url:
             return
         async with httpx.AsyncClient() as client:
-            resp = await client.get(_SESSION_URL, headers=self._auth_headers())
+            resp = await client.get(self._session_url(), headers=self._auth_headers())
             resp.raise_for_status()
             data = resp.json()
         # The primary account is the first one listed in accounts.
         self._account_id = data["primaryAccounts"]["urn:ietf:params:jmap:mail"]
-        self._api_url = data["apiUrl"]
+        self._api_url = self._rewrite_api_url(data["apiUrl"])
 
     async def _jmap_request(self, method_calls: list[list[Any]]) -> list[list[Any]]:
         """Send a JMAP request and return the method responses."""
