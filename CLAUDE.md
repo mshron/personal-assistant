@@ -80,21 +80,36 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 - **Engaged topics persist** across restarts via `/data/zulip_engaged_topics.json`
 - `ZULIP_STREAMS` controls which streams get non-@mention monitoring; @mentions bypass this filter
 
+## Security: Credential Isolation
+
+**Design principle**: The agent container must never have direct access to API credentials. All external API access goes through the credential proxy.
+
+In production, `CRED_PROXY_BASE` points to a Caddy reverse proxy (`polynumeral-cred-proxy` on Fly.io) that holds all real API tokens. The agent sends requests to the proxy, which injects auth headers and forwards to the real APIs. This is defense-in-depth: even if the agent is compromised via prompt injection, it cannot exfiltrate credentials.
+
+**Dual-mode pattern**: All API client code supports two modes:
+- **Proxy mode** (production): `CRED_PROXY_BASE` is set; requests go through the proxy with no local credentials
+- **Direct mode** (local dev): Individual API keys are set directly (e.g. `ANTHROPIC_API_KEY`, `FASTMAIL_API_TOKEN`)
+
+**Exception**: kagimcp hardcodes its base URL — it still requires `KAGI_API_KEY` directly until the forward proxy fallback is implemented (see `personal-agent-zlf`).
+
+**When adding new external API integrations**: Verify it follows the credential isolation pattern — proxy in prod, direct in local dev. The new service needs a route in `credential-proxy/Caddyfile` and dual-mode client code.
+
 ## Key env vars
 
 | Variable | Purpose |
 |----------|---------|
 | `AGENT_MODE` | `cli` (default) or `zulip` |
-| `ANTHROPIC_API_KEY` | LLM API key |
+| `CRED_PROXY_BASE` | Credential proxy URL (e.g. `http://polynumeral-cred-proxy.flycast:8080`). When set, API keys below are not needed (except `KAGI_API_KEY`). |
+| `ANTHROPIC_API_KEY` | LLM API key (local dev only when no proxy) |
 | `ZULIP_SITE` | e.g. `https://polynumeral.zulipchat.com` |
 | `ZULIP_EMAIL` | Bot email |
 | `ZULIP_API_KEY` | Bot API key |
 | `ZULIP_STREAMS` | Streams to monitor (comma-separated) |
 | `ZULIP_ALLOW_FROM` | Optional sender ID allowlist |
-| `GROQ_API_KEY` | For PromptGuard + Action Review (both layers) |
+| `GROQ_API_KEY` | For PromptGuard + Action Review (local dev only when no proxy) |
 | `ACTION_REVIEW_MODEL` | Groq model for action review (default: `openai/gpt-oss-safeguard-20b`) |
-| `KAGI_API_KEY` | For Kagi search/summarizer (MCP) |
-| `FASTMAIL_API_TOKEN` | Fastmail API token for JMAP access |
+| `KAGI_API_KEY` | For Kagi search/summarizer (always needed — kagimcp hardcodes base URL) |
+| `FASTMAIL_API_TOKEN` | Fastmail API token for JMAP access (local dev only when no proxy) |
 | `EMAIL_SUBSCRIPTIONS_FILE` | Path for subscription state (default: `/data/email_subscriptions.json`) |
 | `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
 | `LOG_FILE` | Path for audit log JSONL |
