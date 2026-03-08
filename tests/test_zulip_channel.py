@@ -509,10 +509,10 @@ async def test_thumbs_up_reaction_forwards_approval(tmp_path):
     assert msg.channel == "zulip"
     assert msg.chat_id == "general:greetings"
     assert msg.sender_id == "42"
-    assert "approved unsubscription" in msg.content
+    assert "reacted with" in msg.content
+    assert "ONLY this message" in msg.content
     assert "marketing@store.com" in msg.content
     assert "news@example.com" in msg.content
-    assert "email_unsubscribe" in msg.content
 
 
 async def test_thumbs_up_emoji_name_variants(tmp_path):

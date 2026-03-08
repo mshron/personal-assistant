@@ -4,8 +4,34 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
+
+
+class _RetryProvider:
+    """Wraps a LiteLLM provider with retry-on-rate-limit and inter-call delay."""
+
+    def __init__(self, inner, delay: float = 2.0, max_retries: int = 5):
+        self._inner = inner
+        self._delay = delay
+        self._max_retries = max_retries
+
+    async def chat(self, *args, **kwargs):
+        for attempt in range(self._max_retries + 1):
+            result = await self._inner.chat(*args, **kwargs)
+            if result.finish_reason == "error" and "rate_limit" in (result.content or ""):
+                wait = self._delay * (2 ** attempt)
+                print(f"[rate-limit] Waiting {wait:.0f}s before retry ({attempt + 1}/{self._max_retries})", flush=True)
+                await asyncio.sleep(wait)
+                continue
+            # Add a small delay between all calls to stay under TPM limits
+            await asyncio.sleep(self._delay)
+            return result
+        return result  # Return last error if all retries exhausted
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 
 def _build_agent():
@@ -45,13 +71,14 @@ def _build_agent():
     api_key = "proxy"
     api_base = f"{cred_proxy_base.rstrip('/')}/anthropic"
 
-    provider = LiteLLMProvider(
+    inner_provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.agents.defaults.model,
         extra_headers=None,
         provider_name="anthropic",
     )
+    provider = _RetryProvider(inner_provider, delay=2.0, max_retries=5)
 
     bus = MessageBus()
     agent = AgentLoop(

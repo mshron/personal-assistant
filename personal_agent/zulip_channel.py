@@ -410,11 +410,13 @@ class ZulipChannel(BaseChannel):
         else:
             chat_id = f"dm:{user_id}"
 
-        # Compose the approval message for the agent
+        # Compose the approval message for the agent.
+        # Be very explicit: only act on the specific reacted-to message.
         content = (
-            f"The user has approved unsubscription for all candidates in this message. "
-            f"Please proceed with email_unsubscribe for each sender listed below.\n\n"
-            f"Original bot message:\n{original_content}"
+            f"The user reacted with 👍 to the following bot message (and ONLY this message). "
+            f"Act on what this specific message asks for — do not act on any other messages "
+            f"in the conversation.\n\n"
+            f"Reacted-to message:\n{original_content}"
         )
 
         metadata = {
