@@ -65,7 +65,7 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 ### Secrets
 
 **NEVER read, open, grep, or cat the `.env` file.** It contains live secrets and must only be edited by the user directly. Set production secrets via `fly secrets set`. Key secrets:
-- `ANTHROPIC_API_KEY` — direct API key (no tokenizer)
+- `ANTHROPIC_API_KEY` — LLM API key
 - `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials
 - `ZULIP_STREAMS` — comma-separated streams for non-mention monitoring
 - `GROQ_API_KEY` — for PromptGuard (LlamaGuard) and Action Review (Safeguard 20B)

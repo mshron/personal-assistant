@@ -35,29 +35,16 @@ def _build_agent():
         if subs_file:
             config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file
 
-    # Tokenizer mode: API key is inside the sealed secret, routed through proxy.
-    # Direct mode: API key from environment, direct HTTPS to Anthropic.
-    tokenized_anthropic = os.environ.get("TOKENIZED_ANTHROPIC", "")
-
-    if tokenized_anthropic:
-        # Through Tokenizer: dummy key, http base URL, sealed secret in headers
-        api_key = "via-tokenizer"
-        api_base = "http://api.anthropic.com"
-        extra_headers = {"Proxy-Tokenizer": tokenized_anthropic}
-    else:
-        # Direct mode (local dev without Docker)
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            print("Error: Set ANTHROPIC_API_KEY (direct) or TOKENIZED_ANTHROPIC (via Tokenizer).")
-            sys.exit(1)
-        api_base = None
-        extra_headers = None
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("Error: Set ANTHROPIC_API_KEY.")
+        sys.exit(1)
 
     provider = LiteLLMProvider(
         api_key=api_key,
-        api_base=api_base,
+        api_base=None,
         default_model=config.agents.defaults.model,
-        extra_headers=extra_headers,
+        extra_headers=None,
         provider_name="anthropic",
     )
 
