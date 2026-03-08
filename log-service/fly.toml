@@ -1,0 +1,23 @@
+app = "polynumeral-log"
+primary_region = "iad"
+
+[build]
+
+[env]
+  LOG_FILE = "/data/logs/agent.jsonl"
+  LOG_PORT = "8081"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = 256
+
+[http_service]
+  internal_port = 8081
+  force_https = false
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[mounts]]
+  source = "log_data"
+  destination = "/data"

@@ -49,13 +49,13 @@ Example for Fastmail:
 }
 ```
 
-## Agent-Side Changes
+## Agent-Side Changes (implemented)
 
-- FastmailProvider: accept `api_base` parameter, default to direct URL for local dev
-- LiteLLM/Anthropic: use `api_base` pointing to proxy
-- Email MCP server: accept FASTMAIL_API_BASE instead of FASTMAIL_API_TOKEN
-- Kagi MCP server: CANNOT use reverse proxy. kagimcp uses kagiapi.KagiClient which hardcodes `BASE_URL = "https://kagi.com/api/v0"` as a class variable — no env var override exists. Requires either an HTTP forward proxy (HTTP_PROXY/HTTPS_PROXY) that intercepts kagi.com requests, or a fork/wrapper of kagimcp.
-- main.py: inject proxy base URLs instead of tokens into MCP server env
+- FastmailProvider: proxy-only, requires `api_base` (no direct token mode)
+- LiteLLM/Anthropic: uses `api_base` pointing to proxy
+- Email MCP server: requires FASTMAIL_API_BASE (derived from CRED_PROXY_BASE)
+- Kagi MCP server: custom implementation replacing kagimcp, routes through CRED_PROXY_BASE/kagi
+- main.py: requires CRED_PROXY_BASE, injects proxy base URLs into MCP server env
 
 ## Fly Deployment
 
@@ -67,7 +67,7 @@ Example for Fastmail:
 
 ## Local Development
 
-For local dev, tokens are passed directly (no proxy). The provider classes accept either a token or a base URL, with the token taking precedence. This avoids needing to run Caddy locally.
+Local dev uses `docker compose up`, which runs a Caddy credential-proxy container reading API keys from `.env`. The agent container gets `CRED_PROXY_BASE=http://credential-proxy:8080` — same code path as production, no dual-mode fallbacks.
 
 ## Design Principle
 
