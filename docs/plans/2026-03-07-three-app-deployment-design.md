@@ -22,8 +22,8 @@ Additionally, there's no single command to deploy the full stack with secrets.
 ### Network
 
 All three on Fly private network (Flycast). Agent reaches:
-- Log service at `http://polynumeral-log.flycast:8081/log`
-- Cred proxy at `http://polynumeral-cred-proxy.flycast:8080`
+- Log service at `http://polynumeral-log.flycast/log`
+- Cred proxy at `http://polynumeral-cred-proxy.flycast`
 
 No apps exposed to the public internet.
 

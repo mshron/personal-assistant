@@ -27,10 +27,10 @@ def _build_agent():
         print("Error: CRED_PROXY_BASE is required.")
         sys.exit(1)
 
-    # Kagi MCP server — routes through credential proxy.
-    if "kagi" in config.tools.mcp_servers:
-        config.tools.mcp_servers["kagi"].env["KAGI_API_BASE"] = (
-            f"{cred_proxy_base.rstrip('/')}/kagi"
+    # Brave Search MCP server — routes through credential proxy.
+    if "brave" in config.tools.mcp_servers:
+        config.tools.mcp_servers["brave"].env["BRAVE_API_BASE"] = (
+            f"{cred_proxy_base.rstrip('/')}/brave"
         )
 
     # Email MCP server needs Fastmail credentials and subscription state path.

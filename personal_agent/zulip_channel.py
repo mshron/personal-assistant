@@ -111,14 +111,41 @@ class ZulipChannel(BaseChannel):
         self._engaged_topics_file.write_text(json.dumps(sorted(self._engaged_topics)))
 
     def _engage_topic(self, chat_id: str) -> bool:
-        """Mark a topic as engaged (thread-safe). Returns True if newly engaged."""
+        """Mark a topic as engaged (thread-safe). Returns True if newly engaged.
+
+        Also subscribes to the stream if not already, so reaction events
+        are delivered (all_public_streams only covers message events).
+        """
         with self._engaged_topics_lock:
             if chat_id not in self._engaged_topics:
                 self._engaged_topics.add(chat_id)
                 self._save_engaged_topics()
                 logger.info(f"Engaged topic: {chat_id}")
+                # Subscribe to stream so we get reaction events too
+                if ":" in chat_id:
+                    stream = chat_id.split(":", 1)[0]
+                    self._ensure_subscribed(stream)
                 return True
             return False
+
+    def _ensure_subscribed(self, stream: str) -> None:
+        """Subscribe to a stream if not already subscribed (for reaction events)."""
+        result = self._client.add_subscriptions([{"name": stream}])
+        if result.get("result") == "success":
+            already = result.get("already_subscribed", {})
+            if not already:
+                logger.info(f"Auto-subscribed to stream '{stream}' for reaction events")
+        else:
+            logger.warning(f"Failed to subscribe to '{stream}': {result}")
+
+    def _subscribe_to_engaged_streams(self, streams: set[str]) -> None:
+        """Subscribe to all streams from engaged topics."""
+        subs = [{"name": s} for s in streams]
+        result = self._client.add_subscriptions(subs)
+        if result.get("result") == "success":
+            logger.info(f"Subscribed to {len(streams)} engaged stream(s): {sorted(streams)}")
+        else:
+            logger.error(f"Failed to subscribe to engaged streams: {result}")
 
     def _is_engaged(self, chat_id: str) -> bool:
         """Check if a topic is engaged (thread-safe)."""
@@ -178,6 +205,14 @@ class ZulipChannel(BaseChannel):
 
         # Subscribe bot to streams so it receives all messages, not just @mentions
         await asyncio.to_thread(self._subscribe_to_streams)
+
+        # Subscribe to streams from engaged topics so we get reaction events
+        # (all_public_streams only delivers message events, not reactions)
+        engaged_streams = {
+            t.split(":", 1)[0] for t in self._engaged_topics if ":" in t
+        }
+        if engaged_streams:
+            await asyncio.to_thread(self._subscribe_to_engaged_streams, engaged_streams)
 
         self._listener_thread = threading.Thread(
             target=self._listen_sync,
@@ -324,6 +359,11 @@ class ZulipChannel(BaseChannel):
 
     def _on_reaction_sync(self, event: dict[str, Any]) -> None:
         """Called for each reaction event (in the listener thread)."""
+        logger.info(
+            f"Reaction event: {event.get('emoji_name')} "
+            f"op={event.get('op')} user={event.get('user_id')} "
+            f"message={event.get('message_id')}"
+        )
         # Only handle "add" operations (not removal)
         if event.get("op") != "add":
             return
@@ -334,7 +374,7 @@ class ZulipChannel(BaseChannel):
 
         # Don't process the bot's own reactions
         user_id = event.get("user_id")
-        if str(user_id) == str(self._client.email):
+        if event.get("user", {}).get("email") == self.config.email:
             return
 
         # Check allow_from if configured

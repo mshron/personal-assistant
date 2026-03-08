@@ -2,7 +2,7 @@
     "agents": {
         "defaults": {
             "workspace": "~/.nanobot/workspace",
-            "model": "anthropic/claude-sonnet-4-6",
+            "model": "anthropic/claude-haiku-4-5-20251001",
             "maxTokens": 4096,
             "temperature": 0.7,
             "maxToolIterations": 10,
@@ -16,9 +16,9 @@
     "tools": {
         "restrictToWorkspace": true,
         "mcpServers": {
-            "kagi": {
+            "brave": {
                 "command": "uv",
-                "args": ["run", "python", "-m", "personal_agent.kagi.tools"],
+                "args": ["run", "python", "-m", "personal_agent.brave.tools"],
                 "env": {}
             },
             "email": {

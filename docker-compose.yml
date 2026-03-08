@@ -7,7 +7,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - KAGI_API_KEY=${KAGI_API_KEY}
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
     networks:
       - internal
     restart: unless-stopped

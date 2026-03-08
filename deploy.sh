@@ -18,7 +18,7 @@ CRED_PROXY_SECRETS=(
     ANTHROPIC_API_KEY
     GROQ_API_KEY
     FASTMAIL_API_TOKEN
-    KAGI_API_KEY
+    BRAVE_API_KEY
 )
 
 # Keys from .env to set on the agent app:
@@ -122,10 +122,19 @@ wait_healthy() {
         echo "    [dry-run] wait for $app healthy"
         return
     fi
-    echo "    Waiting for $app to be healthy..."
-    fly status --app "$app" --watch 2>/dev/null || true
-    # Give it a moment to stabilize
-    sleep 3
+    echo "    Waiting for $app to start..."
+    local attempts=0
+    while [[ $attempts -lt 30 ]]; do
+        local state
+        state=$(fly status --app "$app" --json 2>/dev/null | python3 -c "import sys,json; ms=json.load(sys.stdin).get('Machines',[]); print(ms[0]['state'] if ms else '')" 2>/dev/null || echo "")
+        if [[ "$state" == "started" ]]; then
+            echo "    $app is running."
+            return
+        fi
+        sleep 2
+        attempts=$((attempts + 1))
+    done
+    echo "    WARNING: $app did not reach 'started' state after 60s. Continuing anyway."
 }
 
 # ---------------------------------------------------------------------------
@@ -139,7 +148,19 @@ $DRY_RUN && echo "  Mode: DRY RUN"
 $SKIP_SECRETS && echo "  Skipping secrets"
 echo ""
 
-# 1. Set secrets
+# 1. Ensure Flycast private IPs (required for .flycast DNS between apps)
+step "Ensuring Flycast private IPs"
+for app in "$LOG_APP" "$PROXY_APP"; do
+    if ! fly ips list --app "$app" 2>/dev/null | grep -q "private"; then
+        echo "    Allocating private IPv6 for $app"
+        run fly ips allocate-v6 --private --app "$app"
+    else
+        echo "    $app already has private IP"
+    fi
+done
+echo ""
+
+# 2. Set secrets
 if ! $SKIP_SECRETS; then
     step "Setting secrets on $PROXY_APP"
     set_secrets "$PROXY_APP" "${CRED_PROXY_SECRETS[@]}"
@@ -149,24 +170,24 @@ if ! $SKIP_SECRETS; then
     echo ""
 fi
 
-# 2. Deploy log service
+# 3. Deploy log service
 step "Deploying $LOG_APP"
 run fly deploy log-service/
 wait_healthy "$LOG_APP"
 echo ""
 
-# 3. Deploy credential proxy
+# 4. Deploy credential proxy
 step "Deploying $PROXY_APP"
 run fly deploy credential-proxy/
 wait_healthy "$PROXY_APP"
 echo ""
 
-# 4. Deploy agent
+# 5. Deploy agent
 step "Deploying $AGENT_APP"
 run fly deploy --app "$AGENT_APP"
 echo ""
 
-# 5. Verify
+# 6. Verify
 step "Checking agent startup"
 if ! $DRY_RUN; then
     fly logs --app "$AGENT_APP" --no-tail 2>/dev/null | tail -10 || true

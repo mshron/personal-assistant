@@ -63,7 +63,7 @@ Example for Fastmail:
 - Dockerfile: official Caddy image + Caddyfile
 - Secrets: all API tokens set on this app only
 - Flycast enabled for private networking
-- Agent app connects via `http://polynumeral-cred-proxy.flycast:8080`
+- Agent app connects via `http://polynumeral-cred-proxy.flycast`
 
 ## Local Development
 

@@ -29,8 +29,7 @@ EXTERNAL_CONTENT_TOOLS = frozenset({
     "mcp_web_web_fetch",
     "mcp_web_web_search",
     "mcp_email_read_email",
-    "mcp_kagi_search",
-    "mcp_kagi_summarizer",
+    "mcp_brave_web_search",
 })
 
 # Truncate long values in logs to keep JSONL lines manageable

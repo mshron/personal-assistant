@@ -23,10 +23,10 @@
 		}
 	}
 
-	handle_path /kagi/* {
-		reverse_proxy https://kagi.com {
-			header_up Authorization "Bot {env.KAGI_API_KEY}"
-			header_up Host kagi.com
+	handle_path /brave/* {
+		reverse_proxy https://api.search.brave.com {
+			header_up X-Subscription-Token {env.BRAVE_API_KEY}
+			header_up Host api.search.brave.com
 			header_down -Server
 		}
 	}

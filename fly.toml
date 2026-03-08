@@ -5,9 +5,9 @@ primary_region = "iad"
   dockerfile = "Dockerfile.fly"
 
 [env]
-  LOG_SERVICE_URL = "http://polynumeral-log.flycast:8081/log"
+  LOG_SERVICE_URL = "http://polynumeral-log.flycast/log"
   AGENT_MODE = "zulip"
-  CRED_PROXY_BASE = "http://polynumeral-cred-proxy.flycast:8080"
+  CRED_PROXY_BASE = "http://polynumeral-cred-proxy.flycast"
 
 [mounts]
   source = "agent_data"

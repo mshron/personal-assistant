@@ -16,7 +16,7 @@ class FastmailProvider(EmailProvider):
 
     All requests are routed through a credential proxy that injects the
     auth header.  Pass *api_base* (e.g.
-    ``http://polynumeral-cred-proxy.flycast:8080/fastmail``).
+    ``http://polynumeral-cred-proxy.flycast/fastmail``).
     """
 
     def __init__(self, api_base: str) -> None:

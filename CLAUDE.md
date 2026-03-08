@@ -25,7 +25,7 @@ personal_agent/
     promptguard.py     # Layer 1: Groq-hosted LlamaGuard prompt injection detection
     action_review.py   # Layer 2: Groq-hosted action review before tool execution
   email/               # Fastmail JMAP email tools (MCP server)
-  kagi/                # Kagi search/summarize tools (MCP server)
+  brave/               # Brave web search tools (MCP server)
   logging/
     client.py          # async log client → log service
 
@@ -86,7 +86,7 @@ Three Fly apps in region `iad`, all on the private Flycast network:
 | `ANTHROPIC_API_KEY` | `polynumeral-cred-proxy` | LLM API key |
 | `GROQ_API_KEY` | `polynumeral-cred-proxy` | PromptGuard + Action Review |
 | `FASTMAIL_API_TOKEN` | `polynumeral-cred-proxy` | Fastmail JMAP access |
-| `KAGI_API_KEY` | `polynumeral-cred-proxy` | Kagi search/summarizer |
+| `BRAVE_API_KEY` | `polynumeral-cred-proxy` | Brave web search |
 | `ZULIP_SITE` | `polynumeral-assistant` | Zulip server URL |
 | `ZULIP_EMAIL` | `polynumeral-assistant` | Bot email |
 | `ZULIP_API_KEY` | `polynumeral-assistant` | Bot API key |
@@ -126,7 +126,7 @@ For local dev, `docker-compose.yml` reads `.env` and passes API keys to the cred
 
 | Variable | Purpose |
 |----------|---------|
-| `CRED_PROXY_BASE` | **Required.** Credential proxy URL (e.g. `http://credential-proxy:8080` locally, `http://polynumeral-cred-proxy.flycast:8080` in prod) |
+| `CRED_PROXY_BASE` | **Required.** Credential proxy URL (e.g. `http://credential-proxy:8080` locally, `http://polynumeral-cred-proxy.flycast` in prod) |
 | `AGENT_MODE` | `cli` (default) or `zulip` |
 | `ZULIP_SITE` | e.g. `https://polynumeral.zulipchat.com` |
 | `ZULIP_EMAIL` | Bot email |
@@ -136,7 +136,7 @@ For local dev, `docker-compose.yml` reads `.env` and passes API keys to the cred
 | `ACTION_REVIEW_MODEL` | Groq model for action review (default: `openai/gpt-oss-safeguard-20b`) |
 | `EMAIL_SUBSCRIPTIONS_FILE` | Path for subscription state (default: `/data/email_subscriptions.json`) |
 | `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
-| `LOG_SERVICE_URL` | URL of log service (e.g. `http://polynumeral-log.flycast:8081/log`) |
+| `LOG_SERVICE_URL` | URL of log service (e.g. `http://polynumeral-log.flycast/log`) |
 
 **Credential proxy env vars** (set in `.env` for local, `fly secrets set` for prod):
 
@@ -145,7 +145,7 @@ For local dev, `docker-compose.yml` reads `.env` and passes API keys to the cred
 | `ANTHROPIC_API_KEY` | LLM API key |
 | `GROQ_API_KEY` | For PromptGuard + Action Review |
 | `FASTMAIL_API_TOKEN` | Fastmail JMAP access |
-| `KAGI_API_KEY` | Kagi search/summarizer |
+| `BRAVE_API_KEY` | Brave web search |
 
 ## Debugging
 
