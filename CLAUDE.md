@@ -249,14 +249,19 @@ bd close bd-42 --reason "Completed" --json
 - `3` - Low (polish, optimization)
 - `4` - Backlog (future ideas)
 
+### Creating Issues
+
+Every issue must include a concrete testing plan. Prefer running actual tests to verify correctness before closing — `uv run pytest` for unit tests, `docker compose up` for integration tests, `curl` for API routes. A ticket is not closeable until its tests pass. Include the testing plan in the description or notes when creating the issue.
+
 ### Workflow for AI Agents
 
 1. **Check ready work**: `bd ready` shows unblocked issues
 2. **Claim your task atomically**: `bd update <id> --claim`
 3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
+4. **Run the testing plan**: Execute the tests described in the issue before closing. Use Docker containers for integration testing when applicable.
+5. **Discover new work?** Create linked issue:
    - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
+6. **Complete**: `bd close <id> --reason "Done"`
 
 ### Auto-Sync
 
