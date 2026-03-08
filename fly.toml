@@ -8,6 +8,7 @@ primary_region = "iad"
   LOG_SERVICE_URL = "http://localhost:8081/log"
   LOG_FILE = "/data/logs/agent.jsonl"
   AGENT_MODE = "zulip"
+  CRED_PROXY_BASE = "http://polynumeral-cred-proxy.flycast:8080"
 
 [mounts]
   source = "agent_data"
