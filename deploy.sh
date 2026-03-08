@@ -151,13 +151,13 @@ fi
 
 # 2. Deploy log service
 step "Deploying $LOG_APP"
-run fly deploy --app "$LOG_APP" --config log-service/fly.toml --dockerfile log-service/Dockerfile
+run fly deploy log-service/
 wait_healthy "$LOG_APP"
 echo ""
 
 # 3. Deploy credential proxy
 step "Deploying $PROXY_APP"
-run fly deploy --app "$PROXY_APP" --config credential-proxy/fly.toml --dockerfile credential-proxy/Dockerfile
+run fly deploy credential-proxy/
 wait_healthy "$PROXY_APP"
 echo ""
 
