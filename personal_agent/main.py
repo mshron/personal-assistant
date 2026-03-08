@@ -23,6 +23,9 @@ def _build_agent():
     # Nanobot's MCP subprocess only inherits a whitelist (HOME, PATH, etc.),
     # so secrets must be passed explicitly via the env dict.
     cred_proxy_base = os.environ.get("CRED_PROXY_BASE", "")
+    if not cred_proxy_base:
+        print("Error: CRED_PROXY_BASE is required.")
+        sys.exit(1)
 
     # Kagi MCP server (kagimcp).
     # NOTE: kagimcp uses kagiapi.KagiClient which hardcodes
@@ -38,27 +41,15 @@ def _build_agent():
 
     # Email MCP server needs Fastmail credentials and subscription state path.
     if "email" in config.tools.mcp_servers:
-        if cred_proxy_base:
-            config.tools.mcp_servers["email"].env["FASTMAIL_API_BASE"] = (
-                f"{cred_proxy_base.rstrip('/')}/fastmail"
-            )
-        else:
-            fastmail_token = os.environ.get("FASTMAIL_API_TOKEN", "")
-            if fastmail_token:
-                config.tools.mcp_servers["email"].env["FASTMAIL_API_TOKEN"] = fastmail_token
+        config.tools.mcp_servers["email"].env["FASTMAIL_API_BASE"] = (
+            f"{cred_proxy_base.rstrip('/')}/fastmail"
+        )
         subs_file = os.environ.get("EMAIL_SUBSCRIPTIONS_FILE", "")
         if subs_file:
             config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file
 
-    if cred_proxy_base:
-        api_key = "proxy"
-        api_base = f"{cred_proxy_base.rstrip('/')}/anthropic"
-    else:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        api_base = None
-        if not api_key:
-            print("Error: Set ANTHROPIC_API_KEY or CRED_PROXY_BASE.")
-            sys.exit(1)
+    api_key = "proxy"
+    api_base = f"{cred_proxy_base.rstrip('/')}/anthropic"
 
     provider = LiteLLMProvider(
         api_key=api_key,

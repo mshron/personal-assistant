@@ -3,7 +3,7 @@ import pytest
 from personal_agent.guardrails import promptguard
 from personal_agent.guardrails.promptguard import scan_content, ScanResult
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_URL = "http://proxy:8080/groq/openai/v1/chat/completions"
 
 
 def _groq_response(score: str):
@@ -15,9 +15,10 @@ def _groq_response(score: str):
 
 
 @pytest.fixture(autouse=True)
-def _reset_client():
-    """Reset module-level httpx client between tests."""
+def _reset_client(monkeypatch):
+    """Reset module-level httpx client and set proxy URL between tests."""
     promptguard._client = None
+    monkeypatch.setattr(promptguard, "GROQ_URL", GROQ_URL)
     yield
     promptguard._client = None
 
@@ -85,18 +86,8 @@ async def test_long_content_chunked(httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_sends_groq_api_key(monkeypatch, httpx_mock):
-    """Auth header must be present when GROQ_API_KEY is set."""
-    monkeypatch.setattr(promptguard, "GROQ_API_KEY", "test-groq-key-123")
-    httpx_mock.add_response(url=GROQ_URL, json=_groq_response("0.001"))
-    await scan_content("Hello world")
-    request = httpx_mock.get_requests()[0]
-    assert request.headers["authorization"] == "Bearer test-groq-key-123"
-
-
-@pytest.mark.asyncio
-async def test_no_auth_header_without_key(httpx_mock):
-    """No auth header when GROQ_API_KEY is empty."""
+async def test_no_auth_header_in_proxy_mode(httpx_mock):
+    """No auth header when using proxy (GROQ_API_KEY is always empty)."""
     httpx_mock.add_response(url=GROQ_URL, json=_groq_response("0.001"))
     await scan_content("Hello world")
     request = httpx_mock.get_requests()[0]

@@ -32,10 +32,11 @@ This project is a wrapper around [nanobot-ai](https://github.com/HKUDS/nanobot) 
 
 ```bash
 uv sync --dev              # install deps
-cp .env.example .env       # fill in credentials
-uv run python -m personal_agent.main   # CLI mode (default)
-AGENT_MODE=zulip uv run python -m personal_agent.main  # Zulip mode
+cp .env.example .env       # fill in API keys (used by credential proxy)
+docker compose up          # starts credential-proxy, log-service, and agent
 ```
+
+The agent always routes through the credential proxy (Caddy), even locally. `docker-compose.yml` runs a local Caddy instance that reads API keys from `.env` and exposes `CRED_PROXY_BASE=http://credential-proxy:8080` to the agent. The agent container never sees raw API keys (except `KAGI_API_KEY` — see exception below).
 
 ## Tests
 
@@ -64,12 +65,20 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 
 ### Secrets
 
-**NEVER read, open, grep, or cat the `.env` file.** It contains live secrets and must only be edited by the user directly. Set production secrets via `fly secrets set`. Key secrets:
+**NEVER read, open, grep, or cat the `.env` file.** It contains live secrets and must only be edited by the user directly.
+
+- **Local dev**: API keys live in `.env`, which docker-compose passes to the credential-proxy container only. The agent container never sees them.
+- **Production**: API keys are set via `fly secrets set` on the `polynumeral-cred-proxy` app. The agent app (`polynumeral-assistant`) gets `CRED_PROXY_BASE` pointing to the proxy's Flycast address.
+
+Key secrets (set on the credential proxy, not the agent):
 - `ANTHROPIC_API_KEY` — LLM API key
-- `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials
-- `ZULIP_STREAMS` — comma-separated streams for non-mention monitoring
 - `GROQ_API_KEY` — for PromptGuard (LlamaGuard) and Action Review (Safeguard 20B)
-- `KAGI_API_KEY` — for Kagi search/summarizer MCP tools
+- `FASTMAIL_API_TOKEN` — Fastmail JMAP access
+- `KAGI_API_KEY` — for Kagi search/summarizer
+
+Agent-side secrets:
+- `ZULIP_SITE`, `ZULIP_EMAIL`, `ZULIP_API_KEY` — bot credentials (not proxied)
+- `KAGI_API_KEY` — also needed on agent (kagimcp hardcodes base URL, see exception below)
 
 ## Zulip channel behavior
 
@@ -84,36 +93,39 @@ The container runs `start.sh` which starts the log-service sidecar and then the 
 
 **Design principle**: The agent container must never have direct access to API credentials. All external API access goes through the credential proxy.
 
-In production, `CRED_PROXY_BASE` points to a Caddy reverse proxy (`polynumeral-cred-proxy` on Fly.io) that holds all real API tokens. The agent sends requests to the proxy, which injects auth headers and forwards to the real APIs. This is defense-in-depth: even if the agent is compromised via prompt injection, it cannot exfiltrate credentials.
-
-**Dual-mode pattern**: All API client code supports two modes:
-- **Proxy mode** (production): `CRED_PROXY_BASE` is set; requests go through the proxy with no local credentials
-- **Direct mode** (local dev): Individual API keys are set directly (e.g. `ANTHROPIC_API_KEY`, `FASTMAIL_API_TOKEN`)
+`CRED_PROXY_BASE` is required. It points to a Caddy reverse proxy that holds all real API tokens — `polynumeral-cred-proxy` on Fly.io in production, or the `credential-proxy` docker-compose service locally. The agent sends requests to the proxy, which injects auth headers and forwards to the real APIs. This is defense-in-depth: even if the agent is compromised via prompt injection, it cannot exfiltrate credentials.
 
 **Exception**: kagimcp hardcodes its base URL — it still requires `KAGI_API_KEY` directly until the forward proxy fallback is implemented (see `personal-agent-zlf`).
 
-**When adding new external API integrations**: Verify it follows the credential isolation pattern — proxy in prod, direct in local dev. The new service needs a route in `credential-proxy/Caddyfile` and dual-mode client code.
+**When adding new external API integrations**: Add a route in `credential-proxy/Caddyfile`, then have the client code derive its base URL from `CRED_PROXY_BASE`. No direct API key fallbacks.
 
 ## Key env vars
 
+**Agent container env vars:**
+
 | Variable | Purpose |
 |----------|---------|
+| `CRED_PROXY_BASE` | **Required.** Credential proxy URL (e.g. `http://credential-proxy:8080` locally, `http://polynumeral-cred-proxy.flycast:8080` in prod) |
 | `AGENT_MODE` | `cli` (default) or `zulip` |
-| `CRED_PROXY_BASE` | Credential proxy URL (e.g. `http://polynumeral-cred-proxy.flycast:8080`). When set, API keys below are not needed (except `KAGI_API_KEY`). |
-| `ANTHROPIC_API_KEY` | LLM API key (local dev only when no proxy) |
 | `ZULIP_SITE` | e.g. `https://polynumeral.zulipchat.com` |
 | `ZULIP_EMAIL` | Bot email |
 | `ZULIP_API_KEY` | Bot API key |
 | `ZULIP_STREAMS` | Streams to monitor (comma-separated) |
 | `ZULIP_ALLOW_FROM` | Optional sender ID allowlist |
-| `GROQ_API_KEY` | For PromptGuard + Action Review (local dev only when no proxy) |
-| `ACTION_REVIEW_MODEL` | Groq model for action review (default: `openai/gpt-oss-safeguard-20b`) |
-| `KAGI_API_KEY` | For Kagi search/summarizer (always needed — kagimcp hardcodes base URL) |
-| `FASTMAIL_API_TOKEN` | Fastmail API token for JMAP access (local dev only when no proxy) |
+| `KAGI_API_KEY` | For Kagi search/summarizer (kagimcp hardcodes base URL) |
 | `EMAIL_SUBSCRIPTIONS_FILE` | Path for subscription state (default: `/data/email_subscriptions.json`) |
 | `RATE_LIMIT_TPM` | Token-bucket rate limit (tokens/min); 0 = off |
 | `LOG_FILE` | Path for audit log JSONL |
 | `LOG_SERVICE_URL` | URL of log-service sidecar |
+
+**Credential proxy env vars** (set in `.env` for local, `fly secrets set` for prod):
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | LLM API key |
+| `GROQ_API_KEY` | For PromptGuard + Action Review |
+| `FASTMAIL_API_TOKEN` | Fastmail JMAP access |
+| `KAGI_API_KEY` | Kagi search/summarizer |
 
 ## Debugging
 

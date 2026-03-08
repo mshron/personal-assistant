@@ -1,4 +1,17 @@
 services:
+  credential-proxy:
+    image: caddy:2-alpine
+    volumes:
+      - ./credential-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - KAGI_API_KEY=${KAGI_API_KEY}
+    networks:
+      - internal
+    restart: unless-stopped
+
   log-service:
     build:
       context: log-service
@@ -16,13 +29,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file: .env
     environment:
+      - CRED_PROXY_BASE=http://credential-proxy:8080
       - LOG_SERVICE_URL=http://log-service:8081/log
+      - KAGI_API_KEY=${KAGI_API_KEY}
+      - ZULIP_SITE=${ZULIP_SITE}
+      - ZULIP_EMAIL=${ZULIP_EMAIL}
+      - ZULIP_API_KEY=${ZULIP_API_KEY}
+      - ZULIP_STREAMS=${ZULIP_STREAMS}
+      - ZULIP_ALLOW_FROM=${ZULIP_ALLOW_FROM}
+      - AGENT_MODE=${AGENT_MODE}
+      - EMAIL_SUBSCRIPTIONS_FILE=${EMAIL_SUBSCRIPTIONS_FILE}
+      - RATE_LIMIT_TPM=${RATE_LIMIT_TPM}
+      - LOG_FILE=${LOG_FILE}
     volumes:
       - agent-data:/data/nanobot
     depends_on:
       - log-service
+      - credential-proxy
     networks:
       - internal
     restart: unless-stopped

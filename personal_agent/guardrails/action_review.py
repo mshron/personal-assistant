@@ -18,14 +18,8 @@ from dataclasses import dataclass
 import httpx
 
 _CRED_PROXY_BASE = os.environ.get("CRED_PROXY_BASE", "")
-if _CRED_PROXY_BASE:
-    GROQ_URL = f"{_CRED_PROXY_BASE.rstrip('/')}/groq/openai/v1/chat/completions"
-    GROQ_API_KEY = ""  # Proxy handles auth
-else:
-    GROQ_URL = os.environ.get(
-        "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
-    )
-    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_URL = f"{_CRED_PROXY_BASE.rstrip('/')}/groq/openai/v1/chat/completions"
+GROQ_API_KEY = ""  # Proxy handles auth
 REVIEW_MODEL = os.environ.get("ACTION_REVIEW_MODEL", "openai/gpt-oss-safeguard-20b")
 
 SIDE_EFFECTING_TOOLS = frozenset({

@@ -13,16 +13,14 @@ from personal_agent.email.fastmail import FastmailProvider
 # Fixtures & helpers
 # ---------------------------------------------------------------------------
 
-FAKE_TOKEN = "fmtok-test-token"
 FAKE_ACCOUNT_ID = "u1234"
-FAKE_API_URL = "https://api.fastmail.com/jmap/api"
 FAKE_PROXY_BASE = "http://polynumeral-cred-proxy.flycast:8080/fastmail"
-FAKE_PROXY_SESSION_URL = f"{FAKE_PROXY_BASE}/jmap/session"
-FAKE_PROXY_API_URL = f"{FAKE_PROXY_BASE}/jmap/api"
+FAKE_SESSION_URL = f"{FAKE_PROXY_BASE}/jmap/session"
+FAKE_API_URL = f"{FAKE_PROXY_BASE}/jmap/api"
 
 SESSION_RESPONSE = {
     "primaryAccounts": {"urn:ietf:params:jmap:mail": FAKE_ACCOUNT_ID},
-    "apiUrl": FAKE_API_URL,
+    "apiUrl": "https://api.fastmail.com/jmap/api",
 }
 
 MAILBOX_RESPONSE = {
@@ -44,26 +42,13 @@ MAILBOX_RESPONSE = {
 
 @pytest.fixture
 def provider():
-    return FastmailProvider(token=FAKE_TOKEN)
-
-
-@pytest.fixture
-def proxy_provider():
     return FastmailProvider(api_base=FAKE_PROXY_BASE)
 
 
 def _add_session_mock(httpx_mock):
-    """Register the session endpoint mock (direct mode)."""
+    """Register the session endpoint mock."""
     httpx_mock.add_response(
-        url="https://api.fastmail.com/jmap/session",
-        json=SESSION_RESPONSE,
-    )
-
-
-def _add_proxy_session_mock(httpx_mock):
-    """Register the session endpoint mock (proxy mode)."""
-    httpx_mock.add_response(
-        url=FAKE_PROXY_SESSION_URL,
+        url=FAKE_SESSION_URL,
         json=SESSION_RESPONSE,
     )
 
@@ -80,6 +65,7 @@ class TestSessionDiscovery:
         await provider._ensure_session()
 
         assert provider._account_id == FAKE_ACCOUNT_ID
+        # apiUrl from session response is rewritten through the proxy
         assert provider._api_url == FAKE_API_URL
 
     async def test_session_cached_after_first_call(self, httpx_mock, provider):
@@ -94,7 +80,7 @@ class TestSessionDiscovery:
 
     async def test_session_failure_raises(self, httpx_mock, provider):
         httpx_mock.add_response(
-            url="https://api.fastmail.com/jmap/session",
+            url=FAKE_SESSION_URL,
             status_code=401,
         )
         with pytest.raises(httpx.HTTPStatusError):
@@ -503,7 +489,7 @@ class TestErrorHandling:
 
     async def test_session_auth_failure(self, httpx_mock, provider):
         httpx_mock.add_response(
-            url="https://api.fastmail.com/jmap/session",
+            url=FAKE_SESSION_URL,
             status_code=403,
         )
         with pytest.raises(httpx.HTTPStatusError):
@@ -516,64 +502,39 @@ class TestErrorHandling:
 
 
 class TestConstructor:
-    def test_raises_if_neither_token_nor_api_base(self):
-        with pytest.raises(ValueError, match="Either token or api_base"):
-            FastmailProvider()
+    def test_raises_if_no_api_base(self):
+        with pytest.raises(ValueError, match="api_base must be provided"):
+            FastmailProvider(api_base="")
 
-    def test_token_mode(self):
-        p = FastmailProvider(token="tok")
-        assert p._proxy_mode is False
-
-    def test_proxy_mode(self):
-        p = FastmailProvider(api_base="http://proxy:8080/fastmail")
-        assert p._proxy_mode is True
-
-    def test_proxy_strips_trailing_slash(self):
+    def test_strips_trailing_slash(self):
         p = FastmailProvider(api_base="http://proxy:8080/fastmail/")
         assert p._api_base == "http://proxy:8080/fastmail"
 
 
 # ---------------------------------------------------------------------------
-# Proxy mode
+# Proxy routing
 # ---------------------------------------------------------------------------
 
 
-class TestProxyMode:
-    async def test_session_uses_proxy_url(self, httpx_mock, proxy_provider):
-        _add_proxy_session_mock(httpx_mock)
-
-        await proxy_provider._ensure_session()
-
-        assert proxy_provider._account_id == FAKE_ACCOUNT_ID
-        # apiUrl should be rewritten through the proxy
-        assert proxy_provider._api_url == FAKE_PROXY_API_URL
-
-    async def test_no_auth_header_in_proxy_mode(self, httpx_mock, proxy_provider):
-        _add_proxy_session_mock(httpx_mock)
-
-        await proxy_provider._ensure_session()
-
-        req = httpx_mock.get_requests()[0]
-        assert "Authorization" not in req.headers
-
-    async def test_auth_header_in_direct_mode(self, httpx_mock, provider):
+class TestProxyRouting:
+    async def test_no_auth_header_sent(self, httpx_mock, provider):
         _add_session_mock(httpx_mock)
 
         await provider._ensure_session()
 
         req = httpx_mock.get_requests()[0]
-        assert req.headers["Authorization"] == f"Bearer {FAKE_TOKEN}"
+        assert "Authorization" not in req.headers
 
-    async def test_proxy_search(self, httpx_mock, proxy_provider):
-        """Full search through proxy mode works end-to-end."""
-        _add_proxy_session_mock(httpx_mock)
+    async def test_all_requests_go_through_proxy(self, httpx_mock, provider):
+        """Full search works end-to-end through the proxy."""
+        _add_session_mock(httpx_mock)
 
         # Mailbox/get
-        httpx_mock.add_response(url=FAKE_PROXY_API_URL, json=MAILBOX_RESPONSE)
+        httpx_mock.add_response(url=FAKE_API_URL, json=MAILBOX_RESPONSE)
 
         # Email/query + Email/get
         httpx_mock.add_response(
-            url=FAKE_PROXY_API_URL,
+            url=FAKE_API_URL,
             json={
                 "methodResponses": [
                     ["Email/query", {"ids": ["msg-p1"]}, "q0"],
@@ -596,7 +557,7 @@ class TestProxyMode:
             },
         )
 
-        results = await proxy_provider.search(
+        results = await provider.search(
             after=date(2026, 3, 1), before=date(2026, 3, 7)
         )
         assert len(results) == 1
@@ -606,13 +567,9 @@ class TestProxyMode:
         for req in httpx_mock.get_requests():
             assert "api.fastmail.com" not in str(req.url)
 
-    async def test_rewrite_api_url_preserves_path(self, proxy_provider):
+    async def test_rewrite_api_url_preserves_path(self, provider):
         """apiUrl paths other than /jmap/api are preserved."""
-        rewritten = proxy_provider._rewrite_api_url(
+        rewritten = provider._rewrite_api_url(
             "https://api.fastmail.com/jmap/api"
         )
         assert rewritten == f"{FAKE_PROXY_BASE}/jmap/api"
-
-    async def test_rewrite_api_url_noop_in_direct_mode(self, provider):
-        result = provider._rewrite_api_url("https://api.fastmail.com/jmap/api")
-        assert result == "https://api.fastmail.com/jmap/api"

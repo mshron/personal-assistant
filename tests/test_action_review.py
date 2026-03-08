@@ -5,9 +5,10 @@ from personal_agent.guardrails.action_review import review_action, ReviewResult
 
 
 @pytest.fixture(autouse=True)
-def _reset_client():
-    """Reset module-level httpx client between tests."""
+def _reset_client(monkeypatch):
+    """Reset module-level httpx client and set proxy URL between tests."""
     action_review._client = None
+    monkeypatch.setattr(action_review, "GROQ_URL", GROQ_URL)
     yield
     action_review._client = None
 
@@ -15,7 +16,7 @@ def _reset_client():
 SAFE_RESPONSE = '{"safe": true, "reason": "Simple echo command, no side effects."}'
 UNSAFE_RESPONSE = '{"safe": false, "reason": "Uploads local file to external host."}'
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_URL = "http://proxy:8080/groq/openai/v1/chat/completions"
 
 
 def _groq_response(text: str) -> dict:
@@ -61,9 +62,8 @@ async def test_unsafe_action_blocked(mock_groq_unsafe):
 
 
 @pytest.mark.asyncio
-async def test_sends_groq_api_key(monkeypatch, httpx_mock):
-    """Authorization Bearer header must be present."""
-    monkeypatch.setattr(action_review, "GROQ_API_KEY", "test-groq-key-456")
+async def test_no_auth_header_in_proxy_mode(httpx_mock):
+    """No auth header when using proxy (GROQ_API_KEY is always empty)."""
     httpx_mock.add_response(
         url=GROQ_URL,
         json=_groq_response(SAFE_RESPONSE),
@@ -73,14 +73,13 @@ async def test_sends_groq_api_key(monkeypatch, httpx_mock):
         tool_args={"to": "alice@example.com", "subject": "Hi", "body": "..."},
     )
     request = httpx_mock.get_requests()[0]
-    assert request.headers["Authorization"] == "Bearer test-groq-key-456"
+    assert "authorization" not in request.headers
 
 
 @pytest.mark.asyncio
-async def test_sends_correct_model_and_prompt(httpx_mock, monkeypatch):
+async def test_sends_correct_model_and_prompt(httpx_mock):
     """Request body must contain the review model and the tool name."""
     import json
-    monkeypatch.setattr(action_review, "GROQ_API_KEY", "test-key")
     httpx_mock.add_response(
         url=GROQ_URL,
         json=_groq_response(SAFE_RESPONSE),

@@ -10,32 +10,19 @@ import httpx
 
 from personal_agent.email.provider import EmailProvider, EmailSummary
 
-_FASTMAIL_SESSION_URL = "https://api.fastmail.com/jmap/session"
-
 
 class FastmailProvider(EmailProvider):
     """Fastmail JMAP-based email provider.
 
-    Supports two modes:
-
-    * **Direct mode** – pass *token* to authenticate with Fastmail directly.
-    * **Proxy mode** – pass *api_base* (e.g.
-      ``http://polynumeral-cred-proxy.flycast:8080/fastmail``) to route
-      requests through a credential proxy that injects the auth header.
-
-    At least one of *token* or *api_base* must be provided.
+    All requests are routed through a credential proxy that injects the
+    auth header.  Pass *api_base* (e.g.
+    ``http://polynumeral-cred-proxy.flycast:8080/fastmail``).
     """
 
-    def __init__(
-        self,
-        token: str | None = None,
-        api_base: str | None = None,
-    ) -> None:
-        if not token and not api_base:
-            raise ValueError("Either token or api_base must be provided")
-        self._token = token
-        self._api_base = api_base.rstrip("/") if api_base else None
-        self._proxy_mode = api_base is not None
+    def __init__(self, api_base: str) -> None:
+        if not api_base:
+            raise ValueError("api_base must be provided")
+        self._api_base = api_base.rstrip("/")
         self._account_id: str | None = None
         self._api_url: str | None = None
 
@@ -44,21 +31,13 @@ class FastmailProvider(EmailProvider):
     # ------------------------------------------------------------------
 
     def _auth_headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
-        if not self._proxy_mode:
-            headers["Authorization"] = f"Bearer {self._token}"
-        return headers
+        return {"Content-Type": "application/json"}
 
     def _session_url(self) -> str:
-        if self._proxy_mode:
-            return f"{self._api_base}/jmap/session"
-        return _FASTMAIL_SESSION_URL
+        return f"{self._api_base}/jmap/session"
 
     def _rewrite_api_url(self, api_url: str) -> str:
-        """In proxy mode, rewrite the Fastmail apiUrl to go through the proxy."""
-        if not self._proxy_mode:
-            return api_url
-        # Replace the scheme+host from the real apiUrl with the proxy base.
+        """Rewrite the Fastmail apiUrl to go through the proxy."""
         parsed = urlparse(api_url)
         return f"{self._api_base}{parsed.path}"
 
