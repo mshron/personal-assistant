@@ -38,9 +38,14 @@ def _build_agent():
 
     # Email MCP server needs Fastmail credentials and subscription state path.
     if "email" in config.tools.mcp_servers:
-        fastmail_token = os.environ.get("FASTMAIL_API_TOKEN", "")
-        if fastmail_token:
-            config.tools.mcp_servers["email"].env["FASTMAIL_API_TOKEN"] = fastmail_token
+        if cred_proxy_base:
+            config.tools.mcp_servers["email"].env["FASTMAIL_API_BASE"] = (
+                f"{cred_proxy_base.rstrip('/')}/fastmail"
+            )
+        else:
+            fastmail_token = os.environ.get("FASTMAIL_API_TOKEN", "")
+            if fastmail_token:
+                config.tools.mcp_servers["email"].env["FASTMAIL_API_TOKEN"] = fastmail_token
         subs_file = os.environ.get("EMAIL_SUBSCRIPTIONS_FILE", "")
         if subs_file:
             config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file
