@@ -19,6 +19,7 @@ CRED_PROXY_SECRETS=(
     GROQ_API_KEY
     FASTMAIL_API_TOKEN
     BRAVE_API_KEY
+    GMAIL_ACCESS_TOKEN
 )
 
 # Keys from .env to set on the agent app:

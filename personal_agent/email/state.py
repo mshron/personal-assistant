@@ -22,6 +22,7 @@ class SenderRecord:
     last_seen: str  # ISO date
     unsubscribe_method: str | None = None
     unsubscribe_detail: str | None = None
+    provider: str = ""  # Which email provider this sender was found via
     updated_at: str = ""
 
     def __post_init__(self) -> None:
@@ -137,6 +138,7 @@ class SubscriptionStore:
                 "last_seen": kwargs.get("last_seen", _today_iso()),
                 "unsubscribe_method": kwargs.get("unsubscribe_method"),
                 "unsubscribe_detail": kwargs.get("unsubscribe_detail"),
+                "provider": kwargs.get("provider", ""),
                 "updated_at": now,
             }
         else:

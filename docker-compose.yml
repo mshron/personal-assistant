@@ -8,9 +8,22 @@ services:
       - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - BRAVE_API_KEY=${BRAVE_API_KEY}
+      - GMAIL_ACCESS_TOKEN=${GMAIL_ACCESS_TOKEN}
     networks:
       - internal
     restart: unless-stopped
+    # Hardening (local dev only; Fly.io uses its own isolation)
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # Caddy needs this for listening
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /data:size=64M    # Caddy runtime state (TLS certs, etc.)
+      - /config:size=16M  # Caddy config directory
+      - /tmp:size=16M
 
   log-service:
     build:
@@ -24,6 +37,14 @@ services:
     networks:
       - internal
     restart: unless-stopped
+    # Hardening
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M
 
   agent:
     build:
@@ -49,6 +70,14 @@ services:
     networks:
       - internal
     restart: unless-stopped
+    # Hardening — agent processes untrusted input, so lock it down tightly
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
 
 networks:
   internal:

@@ -10,17 +10,40 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from personal_agent.email.fastmail import FastmailProvider
+from personal_agent.email.gmail import GmailProvider
+from personal_agent.email.provider import EmailProvider
 from personal_agent.email.state import SubscriptionStore
 from personal_agent.email.unsubscribe import Unsubscriber
 
 mcp = FastMCP("email")
 
 
-def _get_provider() -> FastmailProvider:
-    api_base = os.environ.get("FASTMAIL_API_BASE", "")
-    if not api_base:
-        raise RuntimeError("FASTMAIL_API_BASE environment variable must be set")
-    return FastmailProvider(api_base=api_base)
+def _get_providers() -> list[tuple[str, EmailProvider]]:
+    """Return a list of (name, provider) tuples for all configured email providers.
+
+    At least one provider must be configured or a RuntimeError is raised.
+    """
+    providers: list[tuple[str, EmailProvider]] = []
+
+    fastmail_base = os.environ.get("FASTMAIL_API_BASE", "")
+    if fastmail_base:
+        providers.append(("fastmail", FastmailProvider(api_base=fastmail_base)))
+
+    gmail_base = os.environ.get("GMAIL_API_BASE", "")
+    if gmail_base:
+        providers.append(("gmail", GmailProvider(api_base=gmail_base)))
+
+    if not providers:
+        raise RuntimeError(
+            "No email providers configured. Set FASTMAIL_API_BASE and/or GMAIL_API_BASE."
+        )
+    return providers
+
+
+def _get_provider() -> EmailProvider:
+    """Return the first configured provider (backward compat for unsubscribe routing)."""
+    providers = _get_providers()
+    return providers[0][1]
 
 
 def _get_store() -> SubscriptionStore:
@@ -50,17 +73,27 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     after_date = date.fromisoformat(after)
     before_date = date.fromisoformat(before)
 
-    provider = _get_provider()
+    providers = _get_providers()
     store = _get_store()
 
-    emails = await provider.search(after_date, before_date, folder)
+    # Collect emails from all providers, tagging each with its provider name
+    all_emails = []
+    provider_for_sender: dict[str, str] = {}
 
-    if not emails:
+    for provider_name, provider in providers:
+        emails = await provider.search(after_date, before_date, folder)
+        for email in emails:
+            all_emails.append(email)
+            # Track which provider a sender came from (first seen wins)
+            if email.sender not in provider_for_sender:
+                provider_for_sender[email.sender] = provider_name
+
+    if not all_emails:
         return f"No emails found in {folder} between {after} and {before}."
 
     # Group by sender
     by_sender: dict[str, list] = defaultdict(list)
-    for email in emails:
+    for email in all_emails:
         by_sender[email.sender].append(email)
 
     # Filter out already-processed senders (not pending)
@@ -74,7 +107,7 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     # Record the scan
     store.add_scan(after_date, before_date, len(new_candidates))
 
-    # Upsert new senders with status "pending"
+    # Upsert new senders with status "pending" and provider tracking
     for sender, msgs in new_candidates.items():
         dates = [m.date for m in msgs]
         store.upsert_sender(
@@ -83,12 +116,13 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
             email_count=len(msgs),
             first_seen=min(dates).date().isoformat(),
             last_seen=max(dates).date().isoformat(),
+            provider=provider_for_sender.get(sender, ""),
         )
 
     # Format output
     lines: list[str] = []
     lines.append(f"Email scan: {folder} from {after} to {before}")
-    lines.append(f"Total emails: {len(emails)}, Unique senders: {len(by_sender)}")
+    lines.append(f"Total emails: {len(all_emails)}, Unique senders: {len(by_sender)}")
     lines.append(f"New/pending candidates: {len(new_candidates)}")
     lines.append("")
 
@@ -99,7 +133,8 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     for sender, msgs in sorted_candidates:
         has_unsub = any(m.has_list_unsubscribe for m in msgs)
         unsub_label = "[has List-Unsubscribe]" if has_unsub else "[no List-Unsubscribe]"
-        lines.append(f"- {sender}: {len(msgs)} emails {unsub_label}")
+        provider_label = f" ({provider_for_sender.get(sender, '')})" if len(providers) > 1 else ""
+        lines.append(f"- {sender}: {len(msgs)} emails {unsub_label}{provider_label}")
         sample_subjects = [m.subject for m in msgs[:3]]
         for subj in sample_subjects:
             lines.append(f"    - {subj}")
@@ -122,21 +157,30 @@ async def email_unsubscribe(sender: str) -> str:
     HTTPS, body link parsing).
     """
     store = _get_store()
-    provider = _get_provider()
+    providers = _get_providers()
 
     record = store.get_sender(sender)
     if record is None:
         return f"Sender '{sender}' not found in subscription store. Run email_scan first."
 
+    # Route to the correct provider based on stored provider name
+    stored_provider = getattr(record, "provider", "") or ""
+    provider: EmailProvider | None = None
+    for pname, p in providers:
+        if pname == stored_provider:
+            provider = p
+            break
+    if provider is None:
+        # Fall back to first provider
+        provider = providers[0][1]
+
     # We need a message_id to unsubscribe. Search for a recent message from this sender.
-    # Use the stored date range to find a message.
     from datetime import date as date_type
+    from datetime import timedelta
 
     after_date = date_type.fromisoformat(record.first_seen)
     before_date = date_type.fromisoformat(record.last_seen)
     # Extend before_date by one day to be inclusive
-    from datetime import timedelta
-
     before_date = before_date + timedelta(days=1)
 
     emails = await provider.search(after_date, before_date)

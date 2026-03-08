@@ -64,6 +64,9 @@ def _build_agent():
         config.tools.mcp_servers["email"].env["FASTMAIL_API_BASE"] = (
             f"{cred_proxy_base.rstrip('/')}/fastmail"
         )
+        config.tools.mcp_servers["email"].env["GMAIL_API_BASE"] = (
+            f"{cred_proxy_base.rstrip('/')}/gmail"
+        )
         subs_file = os.environ.get("EMAIL_SUBSCRIPTIONS_FILE", "")
         if subs_file:
             config.tools.mcp_servers["email"].env["EMAIL_SUBSCRIPTIONS_FILE"] = subs_file

@@ -41,6 +41,22 @@ def _make_email(
     )
 
 
+def _mock_single_provider(mock_provider):
+    """Patch _get_providers to return a single mock provider."""
+    return patch(
+        "personal_agent.email.tools._get_providers",
+        return_value=[("fastmail", mock_provider)],
+    )
+
+
+def _mock_multi_providers(mock_fastmail, mock_gmail):
+    """Patch _get_providers to return two mock providers."""
+    return patch(
+        "personal_agent.email.tools._get_providers",
+        return_value=[("fastmail", mock_fastmail), ("gmail", mock_gmail)],
+    )
+
+
 # ---------------------------------------------------------------------------
 # email_scan tests
 # ---------------------------------------------------------------------------
@@ -61,7 +77,7 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=emails)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_scan("2026-03-01", "2026-03-07")
@@ -80,7 +96,7 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=[])
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_scan("2026-03-01", "2026-03-07")
@@ -103,7 +119,7 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=emails)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_scan("2026-03-01", "2026-03-07")
@@ -124,7 +140,7 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=emails)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             await email_scan("2026-03-01", "2026-03-07")
@@ -142,15 +158,11 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=[])
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             await email_scan("2026-03-01", "2026-03-07")
 
-        # No emails means no scan recorded (only recorded when there are results)
-        # Actually, scan is always recorded -- let's check
-        # The scan is recorded even with 0 candidates
-        # Wait - no emails returns early before recording. Let's verify.
         scans = store.get_scans()
         assert len(scans) == 0  # Early return with no emails
 
@@ -163,7 +175,7 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=emails)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             await email_scan("2026-03-01", "2026-03-07")
@@ -186,12 +198,150 @@ class TestEmailScan:
         mock_provider.search = AsyncMock(return_value=emails)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_scan("2026-03-01", "2026-03-07")
 
         assert "pending@example.com" in result
+
+
+# ---------------------------------------------------------------------------
+# Multi-provider email_scan tests
+# ---------------------------------------------------------------------------
+
+
+class TestEmailScanMultiProvider:
+    async def test_scan_merges_results_from_both_providers(self, store: SubscriptionStore):
+        """email_scan merges results from Fastmail and Gmail."""
+        from personal_agent.email.tools import email_scan
+
+        fastmail_emails = [
+            _make_email("fm-news@example.com", "FM Newsletter", "fm-1", has_unsub=True),
+        ]
+        gmail_emails = [
+            _make_email("gm-news@example.com", "GM Newsletter", "gm-1", has_unsub=True),
+        ]
+
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=fastmail_emails)
+        mock_gmail = AsyncMock()
+        mock_gmail.search = AsyncMock(return_value=gmail_emails)
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            result = await email_scan("2026-03-01", "2026-03-07")
+
+        assert "fm-news@example.com" in result
+        assert "gm-news@example.com" in result
+        assert "Total emails: 2" in result
+
+    async def test_scan_tracks_provider_per_sender(self, store: SubscriptionStore):
+        """Subscription store records which provider each sender came from."""
+        from personal_agent.email.tools import email_scan
+
+        fastmail_emails = [
+            _make_email("fm@example.com", "FM", "fm-1"),
+        ]
+        gmail_emails = [
+            _make_email("gm@example.com", "GM", "gm-1"),
+        ]
+
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=fastmail_emails)
+        mock_gmail = AsyncMock()
+        mock_gmail.search = AsyncMock(return_value=gmail_emails)
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            await email_scan("2026-03-01", "2026-03-07")
+
+        fm_rec = store.get_sender("fm@example.com")
+        assert fm_rec is not None
+        assert fm_rec.provider == "fastmail"
+
+        gm_rec = store.get_sender("gm@example.com")
+        assert gm_rec is not None
+        assert gm_rec.provider == "gmail"
+
+    async def test_scan_shows_provider_label_with_multi(self, store: SubscriptionStore):
+        """When multiple providers are active, output includes provider labels."""
+        from personal_agent.email.tools import email_scan
+
+        fastmail_emails = [_make_email("fm@example.com", "FM", "fm-1")]
+        gmail_emails = [_make_email("gm@example.com", "GM", "gm-1")]
+
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=fastmail_emails)
+        mock_gmail = AsyncMock()
+        mock_gmail.search = AsyncMock(return_value=gmail_emails)
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            result = await email_scan("2026-03-01", "2026-03-07")
+
+        assert "(fastmail)" in result
+        assert "(gmail)" in result
+
+    async def test_scan_works_with_only_fastmail(self, store: SubscriptionStore):
+        """Backward compat: works with only Fastmail configured."""
+        from personal_agent.email.tools import email_scan
+
+        emails = [_make_email("sender@example.com", "Test", "m1")]
+        mock_provider = AsyncMock()
+        mock_provider.search = AsyncMock(return_value=emails)
+
+        with (
+            _mock_single_provider(mock_provider),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            result = await email_scan("2026-03-01", "2026-03-07")
+
+        assert "sender@example.com" in result
+        # No provider label with single provider
+        assert "(fastmail)" not in result
+
+    async def test_scan_works_with_only_gmail(self, store: SubscriptionStore):
+        """Works with only Gmail configured."""
+        from personal_agent.email.tools import email_scan
+
+        emails = [_make_email("sender@example.com", "Test", "m1")]
+        mock_provider = AsyncMock()
+        mock_provider.search = AsyncMock(return_value=emails)
+
+        with (
+            patch(
+                "personal_agent.email.tools._get_providers",
+                return_value=[("gmail", mock_provider)],
+            ),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            result = await email_scan("2026-03-01", "2026-03-07")
+
+        assert "sender@example.com" in result
+
+    async def test_scan_no_emails_from_any_provider(self, store: SubscriptionStore):
+        """No emails from any provider returns informative message."""
+        from personal_agent.email.tools import email_scan
+
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=[])
+        mock_gmail = AsyncMock()
+        mock_gmail.search = AsyncMock(return_value=[])
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+        ):
+            result = await email_scan("2026-03-01", "2026-03-07")
+
+        assert "No emails found" in result
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +360,7 @@ class TestEmailUnsubscribe:
             email_count=3,
             first_seen="2026-03-01",
             last_seen="2026-03-05",
+            provider="fastmail",
         )
 
         emails = [
@@ -226,7 +377,7 @@ class TestEmailUnsubscribe:
         mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
             patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
         ):
@@ -261,7 +412,7 @@ class TestEmailUnsubscribe:
         mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
             patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
         ):
@@ -279,7 +430,7 @@ class TestEmailUnsubscribe:
         mock_provider = AsyncMock()
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_unsubscribe("unknown@example.com")
@@ -302,7 +453,7 @@ class TestEmailUnsubscribe:
         mock_provider.search = AsyncMock(return_value=[])
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
         ):
             result = await email_unsubscribe("gone@example.com")
@@ -333,7 +484,7 @@ class TestEmailUnsubscribe:
         mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
 
         with (
-            patch("personal_agent.email.tools._get_provider", return_value=mock_provider),
+            _mock_single_provider(mock_provider),
             patch("personal_agent.email.tools._get_store", return_value=store),
             patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
         ):
@@ -341,6 +492,89 @@ class TestEmailUnsubscribe:
 
         # Should have used msg-yes (the one with List-Unsubscribe)
         mock_unsubscriber.unsubscribe.assert_called_once_with("msg-yes")
+
+
+# ---------------------------------------------------------------------------
+# Multi-provider email_unsubscribe tests
+# ---------------------------------------------------------------------------
+
+
+class TestEmailUnsubscribeMultiProvider:
+    async def test_unsubscribe_routes_to_correct_provider(self, store: SubscriptionStore):
+        """Unsubscribe uses the provider that originally found the sender."""
+        from personal_agent.email.tools import email_unsubscribe
+
+        store.upsert_sender(
+            "gmail-sender@example.com",
+            status="pending",
+            email_count=3,
+            first_seen="2026-03-01",
+            last_seen="2026-03-05",
+            provider="gmail",
+        )
+
+        emails = [
+            _make_email("gmail-sender@example.com", "News", "gm-42", has_unsub=True),
+        ]
+
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=[])
+        mock_gmail = AsyncMock()
+        mock_gmail.search = AsyncMock(return_value=emails)
+
+        unsub_result = UnsubscribeResult(
+            success=True, method="one_click", detail="POST -> 200"
+        )
+        mock_unsubscriber = AsyncMock()
+        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
+        ):
+            result = await email_unsubscribe("gmail-sender@example.com")
+
+        assert "Successfully" in result
+        # Gmail provider should have been called, not fastmail
+        mock_gmail.search.assert_called_once()
+        mock_fastmail.search.assert_not_called()
+
+    async def test_unsubscribe_falls_back_to_first_provider(self, store: SubscriptionStore):
+        """If no provider is stored, falls back to first provider."""
+        from personal_agent.email.tools import email_unsubscribe
+
+        store.upsert_sender(
+            "old-sender@example.com",
+            status="pending",
+            email_count=1,
+            first_seen="2026-03-01",
+            last_seen="2026-03-05",
+            # No provider field
+        )
+
+        emails = [
+            _make_email("old-sender@example.com", "Old", "fm-1"),
+        ]
+        mock_fastmail = AsyncMock()
+        mock_fastmail.search = AsyncMock(return_value=emails)
+        mock_gmail = AsyncMock()
+
+        unsub_result = UnsubscribeResult(
+            success=False, method="body_link", detail="No links"
+        )
+        mock_unsubscriber = AsyncMock()
+        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
+
+        with (
+            _mock_multi_providers(mock_fastmail, mock_gmail),
+            patch("personal_agent.email.tools._get_store", return_value=store),
+            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
+        ):
+            result = await email_unsubscribe("old-sender@example.com")
+
+        # First provider (fastmail) should have been used
+        mock_fastmail.search.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -400,3 +634,60 @@ class TestEmailListSubscriptions:
             result = await email_list_subscriptions()
 
         assert "[one_click]" in result
+
+
+# ---------------------------------------------------------------------------
+# _get_providers() tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetProviders:
+    def test_no_providers_raises(self):
+        from personal_agent.email.tools import _get_providers
+
+        with (
+            patch.dict("os.environ", {"FASTMAIL_API_BASE": "", "GMAIL_API_BASE": ""}, clear=False),
+        ):
+            with pytest.raises(RuntimeError, match="No email providers configured"):
+                _get_providers()
+
+    def test_fastmail_only(self):
+        from personal_agent.email.tools import _get_providers
+
+        with patch.dict(
+            "os.environ",
+            {"FASTMAIL_API_BASE": "http://proxy/fastmail", "GMAIL_API_BASE": ""},
+            clear=False,
+        ):
+            providers = _get_providers()
+            assert len(providers) == 1
+            assert providers[0][0] == "fastmail"
+
+    def test_gmail_only(self):
+        from personal_agent.email.tools import _get_providers
+
+        with patch.dict(
+            "os.environ",
+            {"FASTMAIL_API_BASE": "", "GMAIL_API_BASE": "http://proxy/gmail"},
+            clear=False,
+        ):
+            providers = _get_providers()
+            assert len(providers) == 1
+            assert providers[0][0] == "gmail"
+
+    def test_both_providers(self):
+        from personal_agent.email.tools import _get_providers
+
+        with patch.dict(
+            "os.environ",
+            {
+                "FASTMAIL_API_BASE": "http://proxy/fastmail",
+                "GMAIL_API_BASE": "http://proxy/gmail",
+            },
+            clear=False,
+        ):
+            providers = _get_providers()
+            assert len(providers) == 2
+            names = [p[0] for p in providers]
+            assert "fastmail" in names
+            assert "gmail" in names
