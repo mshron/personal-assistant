@@ -93,6 +93,8 @@ class ZulipChannel(BaseChannel):
         )
         # Topics where history has already been injected this session
         self._history_injected: set[str] = set()
+        # Serialize reaction processing so approvals happen one at a time
+        self._reaction_lock = threading.Lock()
 
     def _load_engaged_topics(self) -> None:
         """Load engaged topics from disk."""
@@ -358,7 +360,12 @@ class ZulipChannel(BaseChannel):
     _THUMBS_UP_NAMES = frozenset({"+1", "thumbs_up", "thumbsup"})
 
     def _on_reaction_sync(self, event: dict[str, Any]) -> None:
-        """Called for each reaction event (in the listener thread)."""
+        """Called for each reaction event (in the listener thread).
+
+        Reactions are serialized via ``_reaction_lock`` so that approval-style
+        reactions (👍) are processed one at a time.  This prevents the LLM from
+        seeing multiple concurrent requests and hallucinating batch results.
+        """
         logger.info(
             f"Reaction event: {event.get('emoji_name')} "
             f"op={event.get('op')} user={event.get('user_id')} "
@@ -387,6 +394,20 @@ class ZulipChannel(BaseChannel):
         if not message_id:
             return
 
+        # Serialize reaction processing — one at a time to prevent the LLM
+        # from seeing multiple approval requests simultaneously and
+        # hallucinating batch results without calling tools.
+        with self._reaction_lock:
+            self._process_reaction(event, sender_id, message_id, user_id)
+
+    def _process_reaction(
+        self,
+        event: dict[str, Any],
+        sender_id: str,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Process a single reaction event (called under _reaction_lock)."""
         # Fetch the original message to check if it's from the bot
         original = self._fetch_message(message_id)
         if original is None:
@@ -414,8 +435,8 @@ class ZulipChannel(BaseChannel):
         # Be very explicit: only act on the specific reacted-to message.
         content = (
             f"The user reacted with 👍 to the following bot message (and ONLY this message). "
-            f"Act on what this specific message asks for — do not act on any other messages "
-            f"in the conversation.\n\n"
+            f"You MUST call the appropriate tool to act on this. Do NOT claim success without "
+            f"a tool result confirming it.\n\n"
             f"Reacted-to message:\n{original_content}"
         )
 
@@ -429,7 +450,8 @@ class ZulipChannel(BaseChannel):
             }
         }
 
-        # Bridge from sync thread to async event loop
+        # Bridge from sync thread to async event loop.
+        # Use a longer timeout since unsubscribe operations can be slow.
         future = asyncio.run_coroutine_threadsafe(
             self._handle_message(
                 sender_id=sender_id,
@@ -440,7 +462,7 @@ class ZulipChannel(BaseChannel):
             self._loop,
         )
         try:
-            future.result(timeout=30)
+            future.result(timeout=120)
         except Exception as e:
             logger.error(f"Error handling Zulip reaction: {e}")
 
