@@ -1,4 +1,6 @@
 # Dockerfile for Fly.io agent deployment.
+# Hardening: runs as non-root (appuser 1000). Fly.io mounts /data as a
+# persistent volume — start.sh ensures the directory exists at runtime.
 
 FROM python:3.12-slim
 
@@ -16,5 +18,12 @@ COPY personal_agent/ personal_agent/
 COPY nanobot-config.json .
 COPY start.sh .
 RUN chmod +x start.sh
+
+# Create non-root user for defense-in-depth.
+# Fly volumes mount as root, so start.sh fixes ownership before dropping privileges.
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/sh appuser && \
+    mkdir -p /data/nanobot && chown -R appuser:appuser /data
 
 CMD ["./start.sh"]

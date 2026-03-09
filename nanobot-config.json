@@ -1,7 +1,7 @@
 {
     "agents": {
         "defaults": {
-            "workspace": "~/.nanobot/workspace",
+            "workspace": "/data/nanobot/workspace",
             "model": "anthropic/claude-haiku-4-5-20251001",
             "maxTokens": 4096,
             "temperature": 0.7,
@@ -17,13 +17,13 @@
         "restrictToWorkspace": true,
         "mcpServers": {
             "brave": {
-                "command": "uv",
-                "args": ["run", "python", "-m", "personal_agent.brave.tools"],
+                "command": ".venv/bin/python",
+                "args": ["-m", "personal_agent.brave.tools"],
                 "env": {}
             },
             "email": {
-                "command": "uv",
-                "args": ["run", "python", "-m", "personal_agent.email.tools"],
+                "command": ".venv/bin/python",
+                "args": ["-m", "personal_agent.email.tools"],
                 "env": {}
             }
         }

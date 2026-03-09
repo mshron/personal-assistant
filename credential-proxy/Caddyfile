@@ -32,10 +32,7 @@
 	}
 
 	handle_path /gmail/* {
-		reverse_proxy https://gmail.googleapis.com {
-			header_up Authorization "Bearer {env.GMAIL_ACCESS_TOKEN}"
-			header_up Host gmail.googleapis.com
-			header_down -Server
-		}
+		reverse_proxy localhost:8081
 	}
+
 }

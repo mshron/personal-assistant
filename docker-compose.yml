@@ -1,14 +1,14 @@
 services:
   credential-proxy:
-    image: caddy:2-alpine
-    volumes:
-      - ./credential-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+    build:
+      context: credential-proxy
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - BRAVE_API_KEY=${BRAVE_API_KEY}
-      - GMAIL_ACCESS_TOKEN=${GMAIL_ACCESS_TOKEN}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - GMAIL_ADDRESS=${GMAIL_ADDRESS}
     networks:
       - internal
     restart: unless-stopped
@@ -17,6 +17,8 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE  # Caddy needs this for listening
+      - SETUID     # su-exec needs these to switch users for sidecar
+      - SETGID
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -40,8 +42,10 @@ services:
     # Hardening
     cap_drop:
       - ALL
-    security_opt:
-      - no-new-privileges:true
+    cap_add:
+      - CHOWN      # start.sh chowns /data before dropping privileges
+      - SETUID     # gosu needs these to drop from root to appuser
+      - SETGID
     read_only: true
     tmpfs:
       - /tmp:size=16M
@@ -78,6 +82,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64M
+      - /home/appuser/.cache:size=128M,uid=1000,gid=1000  # uv needs a writable cache dir
 
 networks:
   internal:

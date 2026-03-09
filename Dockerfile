@@ -15,4 +15,11 @@ RUN uv sync --no-dev --frozen
 COPY personal_agent/ personal_agent/
 COPY nanobot-config.json .
 
-CMD ["uv", "run", "python", "-m", "personal_agent.main"]
+# Run as non-root for defense-in-depth.
+# Create appuser and ensure /data is writable (volume mount target).
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/sh appuser && \
+    mkdir -p /data/nanobot && chown -R appuser:appuser /data
+USER appuser
+
+CMD [".venv/bin/python", "-m", "personal_agent.main"]

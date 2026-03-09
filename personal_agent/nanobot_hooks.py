@@ -190,7 +190,7 @@ def apply_guardrails(agent) -> None:
     agent.provider with an InstrumentedProvider wrapper.
     Rate-limits LLM calls if RATE_LIMIT_TPM is set to a positive integer.
     """
-    tpm = int(os.environ.get("RATE_LIMIT_TPM", "0"))
+    tpm = int(os.environ.get("RATE_LIMIT_TPM") or "0")
     bucket = TokenBucket(tpm) if tpm > 0 else None
 
     agent.tools = GuardedToolRegistry(agent.tools)
