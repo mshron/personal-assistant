@@ -142,7 +142,8 @@ class InstrumentedProvider:
         return getattr(self._inner, name)
 
     async def chat(self, messages, tools=None, model=None,
-                   max_tokens=4096, temperature=0.7):
+                   max_tokens=4096, temperature=0.7,
+                   reasoning_effort=None, **kwargs):
         # Rate-limit: wait if bucket is depleted
         if self._bucket:
             await self._bucket.wait()
@@ -159,6 +160,7 @@ class InstrumentedProvider:
         response = await self._inner.chat(
             messages, tools=tools, model=model,
             max_tokens=max_tokens, temperature=temperature,
+            reasoning_effort=reasoning_effort, **kwargs,
         )
 
         # Log the response

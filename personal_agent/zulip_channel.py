@@ -61,6 +61,10 @@ class ZulipConfig:
 
         streams = [s.strip() for s in streams_raw.split(",") if s.strip()]
         allow_from = [s.strip() for s in allow_raw.split(",") if s.strip()]
+        # nanobot 0.1.4.post4: empty allow_from now denies all.
+        # Default to ["*"] (allow all) when ZULIP_ALLOW_FROM is unset.
+        if not allow_from:
+            allow_from = ["*"]
 
         return cls(
             site=site,
@@ -386,7 +390,7 @@ class ZulipChannel(BaseChannel):
 
         # Check allow_from if configured
         sender_id = str(user_id)
-        if self.config.allow_from and sender_id not in self.config.allow_from:
+        if self.config.allow_from and "*" not in self.config.allow_from and sender_id not in self.config.allow_from:
             logger.warning(f"Reaction from non-allowed sender {sender_id}, ignoring")
             return
 

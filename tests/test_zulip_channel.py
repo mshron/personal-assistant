@@ -49,7 +49,34 @@ def test_config_empty_streams():
     with patch.dict("os.environ", env, clear=False):
         cfg = ZulipConfig.from_env()
     assert cfg.streams == []
-    assert cfg.allow_from == []
+    # Empty ZULIP_ALLOW_FROM defaults to ["*"] (nanobot 0.1.4.post4 compat)
+    assert cfg.allow_from == ["*"]
+
+
+def test_config_unset_allow_from_defaults_to_wildcard():
+    """When ZULIP_ALLOW_FROM is unset, allow_from defaults to ['*']."""
+    env = {
+        "ZULIP_SITE": "https://test.zulipchat.com",
+        "ZULIP_EMAIL": "bot@test.zulipchat.com",
+        "ZULIP_API_KEY": "key",
+        "ZULIP_STREAMS": "general",
+    }
+    with patch.dict("os.environ", env, clear=True):
+        cfg = ZulipConfig.from_env()
+    assert cfg.allow_from == ["*"]
+
+
+def test_config_explicit_allow_from_preserved():
+    """Explicit ZULIP_ALLOW_FROM values are preserved as-is."""
+    env = {
+        "ZULIP_SITE": "https://test.zulipchat.com",
+        "ZULIP_EMAIL": "bot@test.zulipchat.com",
+        "ZULIP_API_KEY": "key",
+        "ZULIP_ALLOW_FROM": "42,99",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        cfg = ZulipConfig.from_env()
+    assert cfg.allow_from == ["42", "99"]
 
 
 # -- Helpers -------------------------------------------------------------------
@@ -61,7 +88,7 @@ def _make_config(**overrides) -> ZulipConfig:
         email="bot@test.zulipchat.com",
         api_key="testkey",
         streams=["general"],
-        allow_from=[],
+        allow_from=["*"],  # nanobot 0.1.4.post4: empty list denies all
     )
     defaults.update(overrides)
     return ZulipConfig(**defaults)
@@ -577,9 +604,9 @@ async def test_reaction_from_non_allowed_sender_ignored(tmp_path):
     channel.bus.publish_inbound.assert_not_awaited()
 
 
-async def test_reaction_allowed_when_no_allow_from(tmp_path):
-    """When allow_from is empty, all senders' reactions are processed."""
-    config = _make_config(allow_from=[])
+async def test_reaction_allowed_when_wildcard_allow_from(tmp_path):
+    """When allow_from is ['*'], all senders' reactions are processed."""
+    config = _make_config(allow_from=["*"])
     channel = _make_channel(config, tmp_path=tmp_path)
     channel._loop = asyncio.get_running_loop()
 
@@ -608,6 +635,24 @@ async def test_reaction_metadata_includes_message_id(tmp_path):
 
     msg = channel.bus.publish_inbound.call_args[0][0]
     assert msg.metadata["zulip"]["reaction_to_message_id"] == 999
+
+
+async def test_reaction_denied_when_empty_allow_from(tmp_path):
+    """When allow_from is empty list, reactions are denied (nanobot 0.1.4.post4 deny-by-default)."""
+    config = _make_config(allow_from=[])
+    channel = _make_channel(config, tmp_path=tmp_path)
+    channel._loop = asyncio.get_running_loop()
+
+    bot_msg = _bot_message_response()
+    channel._client.get_messages = MagicMock(return_value={
+        "result": "success",
+        "messages": [bot_msg],
+    })
+
+    await _call_reaction_from_thread(channel, _reaction_event(user_id=42))
+    # Empty allow_from passes the reaction-level check (falsy), but
+    # BaseChannel.is_allowed() denies all on empty list in 0.1.4.post4
+    channel.bus.publish_inbound.assert_not_awaited()
 
 
 async def test_reaction_fetch_message_failure_ignored(tmp_path):

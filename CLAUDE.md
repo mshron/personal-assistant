@@ -35,7 +35,7 @@ Fly apps (3 machines):
   polynumeral-assistant    # agent (no API keys, only Zulip creds)
 ```
 
-This project is a wrapper around [nanobot-ai](https://github.com/HKUDS/nanobot) — we do not modify nanobot's source code. Nanobot is a pinned dependency (`nanobot-ai==0.1.4`) that handles sessions, memory, tool execution, and LLM calls. All customization happens through nanobot's public interfaces: `BaseChannel` subclasses, `MessageBus` subscriptions, `AgentLoop` configuration, and provider wrappers. This keeps us able to upgrade nanobot as it evolves.
+This project is a wrapper around [nanobot-ai](https://github.com/HKUDS/nanobot) — we do not modify nanobot's source code. Nanobot is a pinned dependency (`nanobot-ai==0.1.4.post4`) that handles sessions, memory, tool execution, and LLM calls. All customization happens through nanobot's public interfaces: `BaseChannel` subclasses, `MessageBus` subscriptions, `AgentLoop` configuration, and provider wrappers. This keeps us able to upgrade nanobot as it evolves.
 
 ## Running locally
 
@@ -183,6 +183,18 @@ The GitHub SSH key lives in 1Password. If the user has stepped away and `git pus
 ## Dependencies
 
 Managed with `uv`. Key deps: `nanobot-ai`, `zulip`, `httpx`, `pynacl`. Dev deps: `pytest`, `pytest-asyncio`, `pytest-httpx`.
+
+### Upgrading nanobot-ai
+
+We pin nanobot-ai exactly and upgrade deliberately. Follow this path:
+
+1. **Review** — read the changelog/diffs between current pin and target version
+2. **Ask** — flag any breaking changes to `BaseChannel`, `AgentLoop`, `MessageBus`, or provider interfaces we use
+3. **Download** — bump pin in `pyproject.toml`, `uv sync`
+4. **Interrogate** — audit the installed source for unexpected changes (especially security-sensitive paths like `is_allowed`, session history, tool execution)
+5. **Add tests** — cover integration points that could break: ZulipChannel routing, nanobot_hooks, MCP server init, session history handling, `allowFrom` filtering
+6. **Integrate** — update any code that needs to adapt
+7. **Test** — `uv run pytest`, then `docker compose up` for end-to-end
 
 # Beads
 

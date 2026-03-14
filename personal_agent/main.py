@@ -127,14 +127,18 @@ async def run_zulip(agent):
     config = ZulipConfig.from_env()
     channel = ZulipChannel(config, agent.bus)
 
-    # Subscribe channel to receive outbound messages
-    agent.bus.subscribe_outbound("zulip", channel.send)
+    # Run agent loop, channel listener, and outbound consumer concurrently
+    async def _consume_outbound():
+        """Route outbound messages from the bus to the Zulip channel."""
+        while True:
+            msg = await agent.bus.consume_outbound()
+            if msg.channel == "zulip":
+                await channel.send(msg)
 
-    # Run agent loop, channel listener, and outbound dispatcher concurrently
     await asyncio.gather(
         agent.run(),
         channel.start(),
-        agent.bus.dispatch_outbound(),
+        _consume_outbound(),
     )
 
 

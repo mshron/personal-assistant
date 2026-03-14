@@ -1221,9 +1221,10 @@ wheels = [
 
 [[package]]
 name = "nanobot-ai"
-version = "0.1.4"
+version = "0.1.4.post4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "chardet" },
     { name = "croniter" },
     { name = "dingtalk-stream" },
     { name = "httpx" },
@@ -1234,6 +1235,7 @@ dependencies = [
     { name = "mcp" },
     { name = "msgpack" },
     { name = "oauth-cli-kit" },
+    { name = "openai" },
     { name = "prompt-toolkit" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -1250,9 +1252,9 @@ dependencies = [
     { name = "websocket-client" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/58/e8/f055dd8821605cf346b142d00d0bd6a83c07735fd13737b691dcc8f851e6/nanobot_ai-0.1.4.tar.gz", hash = "sha256:706d6c8072fd0012a77053c21101773deaeb10cbd486972d801bff48254f6423", size = 110064, upload-time = "2026-02-18T14:32:56.995Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/db/813db06cdd647e966470fc04a0626f9c6808ced4d9699e399ed0ca28d7ad/nanobot_ai-0.1.4.post4.tar.gz", hash = "sha256:78e2cb67dd8b1eed356bd287a3fee7af9e36cbb5ef371a78fc9573a7a3be73d2", size = 145590, upload-time = "2026-03-08T16:46:22.363Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/13/89517a3b44e05e9191129305014bbb5eeb6a8a0171632807d3823c73e5e5/nanobot_ai-0.1.4-py3-none-any.whl", hash = "sha256:2d0dc7fb2304abba6ea9511d4ebb43fdc71caa2a09476ddf39b4479799f12e61", size = 130146, upload-time = "2026-02-18T14:32:55.541Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/2d/04e62ef0b89fb8fc08ca388a85d1b72f3c86e62bf65e05aa6b69d8eea64d/nanobot_ai-0.1.4.post4-py3-none-any.whl", hash = "sha256:d172480f3543ea9da2eb462d98f6c383dd4fd6eca8b2d99b7eba9f4176296585", size = 167296, upload-time = "2026-03-08T16:46:20.325Z" },
 ]
 
 [[package]]
@@ -1317,7 +1319,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "nanobot-ai", specifier = "==0.1.4" },
+    { name = "nanobot-ai", specifier = "==0.1.4.post4" },
     { name = "pynacl", specifier = ">=1.5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },

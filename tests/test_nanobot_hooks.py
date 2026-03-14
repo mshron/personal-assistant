@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from dataclasses import dataclass, field
 
-from personal_agent.nanobot_hooks import wrap_tool_registry, GuardedToolRegistry
+from personal_agent.nanobot_hooks import wrap_tool_registry, GuardedToolRegistry, InstrumentedProvider
 from personal_agent.guardrails.promptguard import ScanResult
 from personal_agent.guardrails.action_review import ReviewResult
 
@@ -91,3 +92,59 @@ async def test_proxy_passes_through_other_attrs(mock_review, mock_registry):
     mock_registry.list_tools = MagicMock(return_value=["tool_a", "tool_b"])
     wrapped = wrap_tool_registry(mock_registry)
     assert wrapped.list_tools() == ["tool_a", "tool_b"]
+
+
+# -- InstrumentedProvider tests (nanobot 0.1.4.post4 compat) -------------------
+
+
+@dataclass
+class _FakeLLMResponse:
+    content: str = "hello"
+    tool_calls: list = field(default_factory=list)
+    finish_reason: str = "stop"
+    usage: dict = field(default_factory=lambda: {"prompt_tokens": 10, "completion_tokens": 5})
+
+
+@pytest.mark.asyncio
+async def test_instrumented_provider_passes_reasoning_effort():
+    """InstrumentedProvider must forward reasoning_effort to inner provider."""
+    inner = MagicMock()
+    inner.chat = AsyncMock(return_value=_FakeLLMResponse())
+    provider = InstrumentedProvider(inner)
+
+    await provider.chat(
+        [{"role": "user", "content": "hi"}],
+        reasoning_effort="high",
+    )
+
+    _, kwargs = inner.chat.call_args
+    assert kwargs["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_instrumented_provider_passes_extra_kwargs():
+    """InstrumentedProvider must forward unknown kwargs to inner provider."""
+    inner = MagicMock()
+    inner.chat = AsyncMock(return_value=_FakeLLMResponse())
+    provider = InstrumentedProvider(inner)
+
+    await provider.chat(
+        [{"role": "user", "content": "hi"}],
+        some_future_param="value",
+    )
+
+    _, kwargs = inner.chat.call_args
+    assert kwargs["some_future_param"] == "value"
+
+
+@pytest.mark.asyncio
+async def test_instrumented_provider_default_reasoning_effort_is_none():
+    """When reasoning_effort is not passed, it defaults to None."""
+    inner = MagicMock()
+    inner.chat = AsyncMock(return_value=_FakeLLMResponse())
+    provider = InstrumentedProvider(inner)
+
+    await provider.chat([{"role": "user", "content": "hi"}])
+
+    _, kwargs = inner.chat.call_args
+    assert kwargs["reasoning_effort"] is None
