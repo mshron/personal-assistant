@@ -131,7 +131,9 @@ class Unsubscriber:
     async def _try_one_click(self, url: str) -> UnsubscribeResult:
         """RFC 8058 one-click POST."""
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                    timeout=_HTTP_TIMEOUT, follow_redirects=True
+                ) as client:
                 resp = await client.post(
                     url,
                     data={"List-Unsubscribe": "One-Click"},

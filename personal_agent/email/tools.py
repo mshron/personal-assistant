@@ -100,7 +100,7 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     new_candidates: dict[str, list] = {}
     for sender, msgs in by_sender.items():
         existing = store.get_sender(sender)
-        if existing is not None and existing.status != "pending":
+        if existing is not None and existing.status not in ("pending", "attempted"):
             continue
         new_candidates[sender] = msgs
 
@@ -196,7 +196,12 @@ async def email_unsubscribe(sender: str) -> str:
     unsubscriber = Unsubscriber(provider)
     result = await unsubscriber.unsubscribe(target.message_id)
 
-    if result.success:
+    # Only one_click and mailto reliably confirm unsubscription.
+    # Methods like https (bare POST) and body_link (GET) return 2xx for
+    # pages that load but don't actually complete the unsubscribe.
+    _CONFIRMED_METHODS = {"one_click", "mailto"}
+
+    if result.success and result.method in _CONFIRMED_METHODS:
         store.upsert_sender(
             sender,
             status="unsubscribed",
@@ -204,6 +209,19 @@ async def email_unsubscribe(sender: str) -> str:
             unsubscribe_detail=result.detail,
         )
         return f"Successfully unsubscribed from {sender} via {result.method}: {result.detail}"
+    elif result.success:
+        # Method returned 2xx but can't confirm actual unsubscription
+        store.upsert_sender(
+            sender,
+            status="attempted",
+            unsubscribe_method=result.method,
+            unsubscribe_detail=result.detail,
+        )
+        return (
+            f"Attempted to unsubscribe from {sender} via {result.method}: {result.detail}. "
+            f"This method cannot confirm unsubscription — the user may need to "
+            f"visit the unsubscribe link manually."
+        )
     else:
         # Keep as pending on failure
         store.upsert_sender(
