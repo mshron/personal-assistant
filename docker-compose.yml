@@ -74,6 +74,8 @@ services:
     networks:
       - internal
     restart: unless-stopped
+    # Chromium needs /dev/shm > 64MB (default)
+    shm_size: '256m'
     # Hardening — agent processes untrusted input, so lock it down tightly
     cap_drop:
       - ALL
@@ -81,8 +83,8 @@ services:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp:size=64M
-      - /home/appuser/.cache:size=128M,uid=1000,gid=1000  # uv needs a writable cache dir
+      - /tmp:size=256M                                     # Chromium temp files + agent-browser state
+      - /home/appuser/.cache:size=128M,uid=1000,gid=1000   # uv needs a writable cache dir
 
 networks:
   internal:

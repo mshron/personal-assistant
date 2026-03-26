@@ -15,6 +15,9 @@
     "channels": {},
     "tools": {
         "restrictToWorkspace": true,
+        "exec": {
+            "timeout": 120
+        },
         "mcpServers": {
             "brave": {
                 "command": ".venv/bin/python",

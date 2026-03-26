@@ -13,7 +13,6 @@ from personal_agent.email.fastmail import FastmailProvider
 from personal_agent.email.gmail import GmailProvider
 from personal_agent.email.provider import EmailProvider
 from personal_agent.email.state import SubscriptionStore
-from personal_agent.email.unsubscribe import Unsubscriber
 
 mcp = FastMCP("email")
 
@@ -38,12 +37,6 @@ def _get_providers() -> list[tuple[str, EmailProvider]]:
             "No email providers configured. Set FASTMAIL_API_BASE and/or GMAIL_API_BASE."
         )
     return providers
-
-
-def _get_provider() -> EmailProvider:
-    """Return the first configured provider (backward compat for unsubscribe routing)."""
-    providers = _get_providers()
-    return providers[0][1]
 
 
 def _get_store() -> SubscriptionStore:
@@ -143,93 +136,39 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
 
 
 @mcp.tool()
-async def email_unsubscribe(sender: str) -> str:
-    """Unsubscribe from a sender's mailing list.
+async def email_update_status(
+    sender: str,
+    status: str,
+    method: str = "",
+    detail: str = "",
+) -> str:
+    """Update a sender's subscription status in the store.
 
     Parameters
     ----------
     sender:
-        The sender email address to unsubscribe from. Must exist in the
-        subscription store (run email_scan first).
-
-    Looks up the sender in the subscription store to find a message_id,
-    then tries multiple unsubscribe methods (RFC 8058 one-click, mailto,
-    HTTPS, body link parsing).
+        The sender email address. Must exist in the subscription store.
+    status:
+        New status: "unsubscribed", "attempted", "skipped", or "pending".
+    method:
+        How the unsubscribe was performed (e.g. "one_click", "mailto",
+        "browser"). Optional.
+    detail:
+        Human-readable detail about the outcome. Optional.
     """
     store = _get_store()
-    providers = _get_providers()
-
     record = store.get_sender(sender)
     if record is None:
         return f"Sender '{sender}' not found in subscription store. Run email_scan first."
 
-    # Route to the correct provider based on stored provider name
-    stored_provider = getattr(record, "provider", "") or ""
-    provider: EmailProvider | None = None
-    for pname, p in providers:
-        if pname == stored_provider:
-            provider = p
-            break
-    if provider is None:
-        # Fall back to first provider
-        provider = providers[0][1]
+    kwargs: dict = {"status": status}
+    if method:
+        kwargs["unsubscribe_method"] = method
+    if detail:
+        kwargs["unsubscribe_detail"] = detail
 
-    # We need a message_id to unsubscribe. Search for a recent message from this sender.
-    from datetime import date as date_type
-    from datetime import timedelta
-
-    after_date = date_type.fromisoformat(record.first_seen)
-    before_date = date_type.fromisoformat(record.last_seen)
-    # Extend before_date by one day to be inclusive
-    before_date = before_date + timedelta(days=1)
-
-    emails = await provider.search(after_date, before_date)
-    sender_emails = [e for e in emails if e.sender == sender]
-
-    if not sender_emails:
-        return f"No emails found from '{sender}' in the stored date range. Cannot unsubscribe."
-
-    # Pick the most recent email with List-Unsubscribe if possible
-    candidates = [e for e in sender_emails if e.has_list_unsubscribe]
-    target = candidates[0] if candidates else sender_emails[0]
-
-    unsubscriber = Unsubscriber(provider)
-    result = await unsubscriber.unsubscribe(target.message_id)
-
-    # Only one_click and mailto reliably confirm unsubscription.
-    # Methods like https (bare POST) and body_link (GET) return 2xx for
-    # pages that load but don't actually complete the unsubscribe.
-    _CONFIRMED_METHODS = {"one_click", "mailto"}
-
-    if result.success and result.method in _CONFIRMED_METHODS:
-        store.upsert_sender(
-            sender,
-            status="unsubscribed",
-            unsubscribe_method=result.method,
-            unsubscribe_detail=result.detail,
-        )
-        return f"Successfully unsubscribed from {sender} via {result.method}: {result.detail}"
-    elif result.success:
-        # Method returned 2xx but can't confirm actual unsubscription
-        store.upsert_sender(
-            sender,
-            status="attempted",
-            unsubscribe_method=result.method,
-            unsubscribe_detail=result.detail,
-        )
-        return (
-            f"Attempted to unsubscribe from {sender} via {result.method}: {result.detail}. "
-            f"This method cannot confirm unsubscription — the user may need to "
-            f"visit the unsubscribe link manually."
-        )
-    else:
-        # Keep as pending on failure
-        store.upsert_sender(
-            sender,
-            unsubscribe_method=result.method,
-            unsubscribe_detail=result.detail,
-        )
-        return f"Failed to unsubscribe from {sender} via {result.method}: {result.detail}"
+    store.upsert_sender(sender, **kwargs)
+    return f"Updated {sender}: status={status}" + (f", method={method}" if method else "")
 
 
 @mcp.tool()

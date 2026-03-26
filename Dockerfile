@@ -5,6 +5,21 @@ WORKDIR /app
 # Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# System deps: Chromium + deps (browser automation), Node.js + npm (agent-browser)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation fonts-noto-cjk fonts-noto-color-emoji \
+    nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install agent-browser CLI (Rust binary distributed via npm)
+RUN npm install -g agent-browser && npm cache clean --force
+
+# Point agent-browser at system Chromium
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV AGENT_BROWSER_DATA_DIR=/tmp/agent-browser
+ENV AGENT_BROWSER_CONTENT_BOUNDARIES=1
+
 # Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock ./
 

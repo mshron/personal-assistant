@@ -10,7 +10,6 @@ import pytest
 
 from personal_agent.email.provider import EmailSummary
 from personal_agent.email.state import SubscriptionStore
-from personal_agent.email.unsubscribe import UnsubscribeResult
 
 
 # ---------------------------------------------------------------------------
@@ -368,348 +367,59 @@ class TestEmailScanMultiProvider:
 
 
 # ---------------------------------------------------------------------------
-# email_unsubscribe tests
+# email_update_status tests
 # ---------------------------------------------------------------------------
 
 
-class TestEmailUnsubscribe:
-    async def test_unsubscribe_success(self, store: SubscriptionStore):
-        """Successful unsubscribe updates store status."""
-        from personal_agent.email.tools import email_unsubscribe
+class TestEmailUpdateStatus:
+    async def test_update_status_success(self, store: SubscriptionStore):
+        """Update status of a known sender."""
+        from personal_agent.email.tools import email_update_status
 
-        store.upsert_sender(
-            "news@example.com",
-            status="pending",
-            email_count=3,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-            provider="fastmail",
-        )
+        store.upsert_sender("news@example.com", status="pending", email_count=3)
 
-        emails = [
-            _make_email("news@example.com", "News", "msg-42", has_unsub=True),
-        ]
+        with patch("personal_agent.email.tools._get_store", return_value=store):
+            result = await email_update_status(
+                sender="news@example.com",
+                status="unsubscribed",
+                method="one_click",
+                detail="POST -> 200",
+            )
 
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(
-            success=True, method="one_click", detail="POST -> 200"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("news@example.com")
-
-        assert "Successfully" in result
-        assert "one_click" in result
+        assert "Updated" in result
+        assert "unsubscribed" in result
         rec = store.get_sender("news@example.com")
         assert rec is not None
         assert rec.status == "unsubscribed"
+        assert rec.unsubscribe_method == "one_click"
+        assert rec.unsubscribe_detail == "POST -> 200"
 
-    async def test_unsubscribe_failure(self, store: SubscriptionStore):
-        """Failed unsubscribe keeps sender as pending."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "spam@example.com",
-            status="pending",
-            email_count=5,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-        )
-
-        emails = [_make_email("spam@example.com", "Spam", "msg-99")]
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(
-            success=False, method="body_link", detail="No unsubscribe links found"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("spam@example.com")
-
-        assert "Failed" in result
-        rec = store.get_sender("spam@example.com")
-        assert rec is not None
-        assert rec.status == "pending"
-
-    async def test_unsubscribe_unreliable_method_marks_attempted(self, store: SubscriptionStore):
-        """Unsubscribe via https or body_link marks as 'attempted', not 'unsubscribed'."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "news@example.com",
-            status="pending",
-            email_count=2,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-            provider="fastmail",
-        )
-
-        emails = [
-            _make_email("news@example.com", "News", "msg-50", has_unsub=False),
-        ]
-
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        # https method returns success=True but is not a confirmed method
-        unsub_result = UnsubscribeResult(
-            success=True, method="https", detail="POST https://example.com/unsub -> 200"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("news@example.com")
-
-        assert "Attempted" in result
-        assert "cannot confirm" in result
-        rec = store.get_sender("news@example.com")
-        assert rec is not None
-        assert rec.status == "attempted"
-        assert rec.unsubscribe_method == "https"
-
-    async def test_unsubscribe_body_link_marks_attempted(self, store: SubscriptionStore):
-        """Unsubscribe via body_link also marks as 'attempted'."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "promo@example.com",
-            status="pending",
-            email_count=1,
-            first_seen="2026-03-01",
-            last_seen="2026-03-01",
-            provider="fastmail",
-        )
-
-        emails = [_make_email("promo@example.com", "Promo", "msg-60")]
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(
-            success=True, method="body_link", detail="GET https://example.com/unsub -> 200"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("promo@example.com")
-
-        assert "Attempted" in result
-        assert "cannot confirm" in result
-        rec = store.get_sender("promo@example.com")
-        assert rec is not None
-        assert rec.status == "attempted"
-
-    async def test_unsubscribe_mailto_marks_unsubscribed(self, store: SubscriptionStore):
-        """Unsubscribe via mailto is a confirmed method."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "list@example.com",
-            status="pending",
-            email_count=1,
-            first_seen="2026-03-01",
-            last_seen="2026-03-01",
-            provider="fastmail",
-        )
-
-        emails = [_make_email("list@example.com", "List", "msg-70", has_unsub=True)]
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(
-            success=True, method="mailto", detail="Sent unsubscribe email to unsub@example.com"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("list@example.com")
-
-        assert "Successfully" in result
-        rec = store.get_sender("list@example.com")
-        assert rec is not None
-        assert rec.status == "unsubscribed"
-
-    async def test_unsubscribe_unknown_sender(self, store: SubscriptionStore):
+    async def test_update_status_unknown_sender(self, store: SubscriptionStore):
         """Unknown sender returns error message."""
-        from personal_agent.email.tools import email_unsubscribe
+        from personal_agent.email.tools import email_update_status
 
-        mock_provider = AsyncMock()
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-        ):
-            result = await email_unsubscribe("unknown@example.com")
+        with patch("personal_agent.email.tools._get_store", return_value=store):
+            result = await email_update_status(
+                sender="unknown@example.com", status="unsubscribed"
+            )
 
         assert "not found" in result
 
-    async def test_unsubscribe_no_emails_found(self, store: SubscriptionStore):
-        """No emails from sender in date range returns error."""
-        from personal_agent.email.tools import email_unsubscribe
+    async def test_update_status_minimal(self, store: SubscriptionStore):
+        """Update with only status, no method/detail."""
+        from personal_agent.email.tools import email_update_status
 
-        store.upsert_sender(
-            "gone@example.com",
-            status="pending",
-            email_count=1,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-        )
+        store.upsert_sender("spam@example.com", status="pending", email_count=1)
 
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=[])
+        with patch("personal_agent.email.tools._get_store", return_value=store):
+            result = await email_update_status(
+                sender="spam@example.com", status="skipped"
+            )
 
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-        ):
-            result = await email_unsubscribe("gone@example.com")
-
-        assert "No emails found" in result
-
-    async def test_unsubscribe_prefers_list_unsubscribe(self, store: SubscriptionStore):
-        """Unsubscribe picks email with List-Unsubscribe header when available."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "news@example.com",
-            status="pending",
-            email_count=2,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-        )
-
-        emails = [
-            _make_email("news@example.com", "No header", "msg-no", has_unsub=False),
-            _make_email("news@example.com", "Has header", "msg-yes", has_unsub=True),
-        ]
-        mock_provider = AsyncMock()
-        mock_provider.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(success=True, method="one_click", detail="OK")
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_single_provider(mock_provider),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            await email_unsubscribe("news@example.com")
-
-        # Should have used msg-yes (the one with List-Unsubscribe)
-        mock_unsubscriber.unsubscribe.assert_called_once_with("msg-yes")
-
-
-# ---------------------------------------------------------------------------
-# Multi-provider email_unsubscribe tests
-# ---------------------------------------------------------------------------
-
-
-class TestEmailUnsubscribeMultiProvider:
-    async def test_unsubscribe_routes_to_correct_provider(self, store: SubscriptionStore):
-        """Unsubscribe uses the provider that originally found the sender."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "gmail-sender@example.com",
-            status="pending",
-            email_count=3,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-            provider="gmail",
-        )
-
-        emails = [
-            _make_email("gmail-sender@example.com", "News", "gm-42", has_unsub=True),
-        ]
-
-        mock_fastmail = AsyncMock()
-        mock_fastmail.search = AsyncMock(return_value=[])
-        mock_gmail = AsyncMock()
-        mock_gmail.search = AsyncMock(return_value=emails)
-
-        unsub_result = UnsubscribeResult(
-            success=True, method="one_click", detail="POST -> 200"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_multi_providers(mock_fastmail, mock_gmail),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("gmail-sender@example.com")
-
-        assert "Successfully" in result
-        # Gmail provider should have been called, not fastmail
-        mock_gmail.search.assert_called_once()
-        mock_fastmail.search.assert_not_called()
-
-    async def test_unsubscribe_falls_back_to_first_provider(self, store: SubscriptionStore):
-        """If no provider is stored, falls back to first provider."""
-        from personal_agent.email.tools import email_unsubscribe
-
-        store.upsert_sender(
-            "old-sender@example.com",
-            status="pending",
-            email_count=1,
-            first_seen="2026-03-01",
-            last_seen="2026-03-05",
-            # No provider field
-        )
-
-        emails = [
-            _make_email("old-sender@example.com", "Old", "fm-1"),
-        ]
-        mock_fastmail = AsyncMock()
-        mock_fastmail.search = AsyncMock(return_value=emails)
-        mock_gmail = AsyncMock()
-
-        unsub_result = UnsubscribeResult(
-            success=False, method="body_link", detail="No links"
-        )
-        mock_unsubscriber = AsyncMock()
-        mock_unsubscriber.unsubscribe = AsyncMock(return_value=unsub_result)
-
-        with (
-            _mock_multi_providers(mock_fastmail, mock_gmail),
-            patch("personal_agent.email.tools._get_store", return_value=store),
-            patch("personal_agent.email.tools.Unsubscriber", return_value=mock_unsubscriber),
-        ):
-            result = await email_unsubscribe("old-sender@example.com")
-
-        # First provider (fastmail) should have been used
-        mock_fastmail.search.assert_called_once()
+        assert "Updated" in result
+        rec = store.get_sender("spam@example.com")
+        assert rec is not None
+        assert rec.status == "skipped"
 
 
 # ---------------------------------------------------------------------------
