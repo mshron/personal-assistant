@@ -38,7 +38,7 @@ def _get_providers() -> list[tuple[str, EmailProvider]]:
 
 
 @mcp.tool()
-async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
+async def email_scan(after: str, before: str = "", folder: str = "Inbox") -> str:
     """Scan emails in a date range and group by sender.
 
     Parameters
@@ -46,7 +46,7 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     after:
         Start date (ISO format, e.g. "2026-03-01").
     before:
-        End date (ISO format, e.g. "2026-03-07").
+        End date (ISO format, e.g. "2026-03-26"). Defaults to today.
     folder:
         Mailbox folder to scan (default "Inbox").
 
@@ -54,7 +54,7 @@ async def email_scan(after: str, before: str, folder: str = "Inbox") -> str:
     unsubscribe availability, and sample subjects.
     """
     after_date = date.fromisoformat(after)
-    before_date = date.fromisoformat(before)
+    before_date = date.fromisoformat(before) if before else date.today()
 
     providers = _get_providers()
 
