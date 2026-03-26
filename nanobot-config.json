@@ -28,6 +28,11 @@
                 "command": ".venv/bin/python",
                 "args": ["-m", "personal_agent.email.tools"],
                 "env": {}
+            },
+            "scratchpad": {
+                "command": ".venv/bin/python",
+                "args": ["-m", "personal_agent.scratchpad"],
+                "env": {}
             }
         }
     },
