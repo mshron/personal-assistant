@@ -27,7 +27,8 @@
             "email": {
                 "command": ".venv/bin/python",
                 "args": ["-m", "personal_agent.email.tools"],
-                "env": {}
+                "env": {},
+                "toolTimeout": 120
             },
             "scratchpad": {
                 "command": ".venv/bin/python",
