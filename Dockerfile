@@ -18,6 +18,7 @@ RUN npm install -g agent-browser && npm cache clean --force
 # Point agent-browser at system Chromium
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV AGENT_BROWSER_DATA_DIR=/tmp/agent-browser
+ENV AGENT_BROWSER_SOCKET_DIR=/tmp
 ENV AGENT_BROWSER_CONTENT_BOUNDARIES=1
 
 # Copy dependency files first for layer caching
