@@ -36,7 +36,7 @@ class _RetryProvider:
 
 def _build_agent():
     """Construct the Nanobot AgentLoop from our config."""
-    from nanobot.config.loader import load_config, get_data_dir
+    from nanobot.config.loader import load_config
     from nanobot.bus.queue import MessageBus
     from nanobot.agent.loop import AgentLoop
     from nanobot.providers.litellm_provider import LiteLLMProvider
