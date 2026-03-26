@@ -2,6 +2,10 @@
 
 Nanobot-based personal assistant deployed to Fly.io, communicating via Zulip.
 
+## Design Principles
+
+**Prefer agent primitives over complex MCP tools.** Give the agent small, composable tools and let it reason about how to combine them. Hardcoded multi-step logic in MCP tools makes it harder for the agent to adapt when reality doesn't match assumptions. A simple write + lookup + grep is better than a custom domain-specific endpoint. When in doubt, expose data as files and teach the agent where to look via skills.
+
 ## Quick reference
 
 ```bash
