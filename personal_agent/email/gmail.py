@@ -143,7 +143,7 @@ class GmailProvider(EmailProvider):
         # Step 2: Fetch message metadata concurrently (up to 20 at a time)
         import asyncio
 
-        sem = asyncio.Semaphore(20)
+        sem = asyncio.Semaphore(5)
 
         async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> EmailSummary:
             async with sem:
