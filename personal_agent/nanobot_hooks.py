@@ -185,15 +185,33 @@ def wrap_tool_registry(registry) -> GuardedToolRegistry:
     return GuardedToolRegistry(registry)
 
 
+def _tool_hint_full(tool_calls: list) -> str:
+    """Format tool calls with full arguments (no truncation).
+
+    Replaces nanobot's default _tool_hint which truncates args to 40 chars.
+    """
+    import json
+
+    def _fmt(tc):
+        args = (tc.arguments[0] if isinstance(tc.arguments, list) else tc.arguments) or {}
+        if not args:
+            return tc.name
+        args_str = json.dumps(args, ensure_ascii=False)
+        return f"{tc.name}({args_str})"
+    return ", ".join(_fmt(tc) for tc in tool_calls)
+
+
 def apply_guardrails(agent) -> None:
     """Monkey-patch an AgentLoop to use guarded tool execution and LLM logging.
 
     Replaces agent.tools with a GuardedToolRegistry wrapper and
     agent.provider with an InstrumentedProvider wrapper.
     Rate-limits LLM calls if RATE_LIMIT_TPM is set to a positive integer.
+    Replaces _tool_hint with a non-truncating version for full debug visibility.
     """
     tpm = int(os.environ.get("RATE_LIMIT_TPM") or "0")
     bucket = TokenBucket(tpm) if tpm > 0 else None
 
     agent.tools = GuardedToolRegistry(agent.tools)
     agent.provider = InstrumentedProvider(agent.provider, bucket=bucket)
+    agent._tool_hint = staticmethod(_tool_hint_full)
