@@ -89,6 +89,11 @@ async def email_scan(after: str, before: str = "", folder: str = "Inbox") -> str
         unsub_label = "[has List-Unsubscribe]" if has_unsub else "[no List-Unsubscribe]"
         provider_label = f" ({provider_for_sender.get(sender, '')})" if len(providers) > 1 else ""
         lines.append(f"- {sender}: {len(msgs)} emails {unsub_label}{provider_label}")
+        # Include the actual List-Unsubscribe header from the first email that has one
+        if has_unsub:
+            unsub_msg = next((m for m in msgs if m.list_unsubscribe), None)
+            if unsub_msg:
+                lines.append(f"    List-Unsubscribe: {unsub_msg.list_unsubscribe}")
         sample_subjects = [m.subject for m in msgs[:3]]
         for subj in sample_subjects:
             lines.append(f"    - {subj}")

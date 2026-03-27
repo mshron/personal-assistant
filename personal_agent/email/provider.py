@@ -17,6 +17,7 @@ class EmailSummary:
     subject: str
     date: datetime
     has_list_unsubscribe: bool
+    list_unsubscribe: str = ""  # Raw List-Unsubscribe header value
 
 
 # Pattern that loosely matches unsubscribe-style content.

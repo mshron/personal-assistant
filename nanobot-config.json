@@ -12,7 +12,9 @@
     "providers": {
         "anthropic": {}
     },
-    "channels": {},
+    "channels": {
+        "sendToolHints": true
+    },
     "tools": {
         "restrictToWorkspace": true,
         "exec": {

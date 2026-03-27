@@ -160,7 +160,7 @@ class GmailProvider(EmailProvider):
             headers = msg.get("payload", {}).get("headers", [])
             from_header = self._find_header(headers, "From") or ""
             subject = self._find_header(headers, "Subject") or ""
-            list_unsub = self._find_header(headers, "List-Unsubscribe")
+            list_unsub = self._find_header(headers, "List-Unsubscribe") or ""
 
             sender = from_header
             if "<" in from_header and ">" in from_header:
@@ -177,6 +177,7 @@ class GmailProvider(EmailProvider):
                 subject=subject,
                 date=dt,
                 has_list_unsubscribe=bool(list_unsub),
+                list_unsubscribe=list_unsub,
             )
 
         async with httpx.AsyncClient() as client:

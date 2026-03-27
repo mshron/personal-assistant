@@ -6,15 +6,15 @@ metadata: {"nanobot": {"requires": {"bins": ["agent-browser"]}}}
 
 # Email Unsubscribe Workflow
 
-Multi-step agentic workflow for unsubscribing from email mailing lists. Uses deterministic methods first (fast, cheap) and falls back to browser automation (reliable, handles JavaScript pages). Tracks progress in the scratchpad.
+Multi-step agentic workflow for unsubscribing from email mailing lists. Tracks progress in the scratchpad. Uses real URLs from the email scan — NEVER fabricate or guess URLs.
 
 ## Overview
 
-1. **Check scratchpad** — Use `scratchpad_lookup(topic="email")` to see what's already been done
-2. **Scan** — Use `email_scan` to find senders and their unsubscribe capabilities
+1. **Check scratchpad** — See what's already been done
+2. **Scan** — Use `email_scan` to find senders (includes actual List-Unsubscribe URLs)
 3. **Compare** — Cross-reference scan results with scratchpad to find new senders
-4. **Unsubscribe** — Try methods in order: RFC 8058 one-click > mailto > browser
-5. **Record** — Write outcome to scratchpad with `scratchpad_write`
+4. **Unsubscribe** — Use agent-browser to visit the real unsubscribe URL
+5. **Record** — Write outcome to scratchpad
 
 ## Step 1: Check What's Been Done
 
@@ -22,89 +22,82 @@ Multi-step agentic workflow for unsubscribing from email mailing lists. Uses det
 Call scratchpad_lookup(topic="email")
 ```
 
-This shows all prior activity — which senders have been unsubscribed, attempted, or skipped.
-
 ## Step 2: Scan and Compare
 
 ```
-Call email_scan(after="2026-03-01", before="2026-03-25")
+Call email_scan(after="2026-03-01")
 ```
 
-Returns all senders with email counts and `[has List-Unsubscribe]` labels. Compare with the scratchpad to identify senders not yet processed.
+The output includes `List-Unsubscribe:` headers with real URLs for each sender that has them. These are the ONLY URLs you should use. Example output:
 
-## Step 3: For Each New Sender, Try Methods in Order
+```
+- editor@members.perigold.com: 9 emails [has List-Unsubscribe]
+    List-Unsubscribe: <https://real-url.example.com/unsub?token=abc123>, <mailto:unsub@example.com>
+    - Sale: Up to 50% off
+```
 
-### Method A: RFC 8058 One-Click (best)
+## Step 3: Unsubscribe Using Real URLs
 
-If the sender has `[has List-Unsubscribe]`, try one-click first via `exec`:
+**CRITICAL: Only use URLs from the List-Unsubscribe header in the scan output. NEVER guess or construct URLs.**
+
+### Method A: One-Click via agent-browser (best)
+
+If the List-Unsubscribe header contains an HTTPS URL, use agent-browser to POST to it:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST \
-  -d "List-Unsubscribe=One-Click" \
-  "UNSUBSCRIBE_URL_FROM_HEADER"
-```
+# Extract the HTTPS URL from the List-Unsubscribe header
+# e.g. <https://example.com/unsub?token=abc123>
 
-If 200-299, record it:
-```
-Call scratchpad_write(topic="email", subtopic="news@example.com", body="status=unsubscribed, method=one_click, POST -> 200")
-```
-
-### Method B: Mailto (good)
-
-If the List-Unsubscribe header contains a `mailto:` URL, send an unsubscribe email. Record the outcome to scratchpad.
-
-### Method C: Browser Automation (fallback)
-
-When deterministic methods fail or aren't available, use `agent-browser`:
-
-```bash
-agent-browser open "https://example.com/unsubscribe?token=abc123"
+# Navigate to the URL (this effectively does a GET)
+agent-browser open "https://example.com/unsub?token=abc123"
 agent-browser wait --load networkidle
 agent-browser snapshot -i
 ```
 
-**Read the snapshot.** Look for:
-- A "Confirm" or "Unsubscribe" button -> click it
-- A form asking for email address -> fill it and submit
-- A "You have been unsubscribed" message -> already done
-- A CAPTCHA or login wall -> mark as "attempted" and move on
+Read the snapshot. If the page shows a confirmation button, click it. If it says "successfully unsubscribed", you're done.
+
+Record the result:
+```
+Call scratchpad_write(topic="email", subtopic="sender@example.com", body="status=unsubscribed, method=browser_one_click, visited real unsub URL")
+```
+
+### Method B: Mailto
+
+If the List-Unsubscribe header contains a `mailto:` URL, note the address and use it to send an unsubscribe email.
+
+### Method C: Interactive unsubscribe page
+
+If the one-click URL leads to a multi-step page:
 
 ```bash
+agent-browser snapshot -i
+# Read the page, find the confirm/unsubscribe button
 agent-browser click @e3
 agent-browser wait --load networkidle
 agent-browser snapshot -i
+# Verify confirmation
 ```
 
-**Read the result.** If confirmed:
-```
-Call scratchpad_write(topic="email", subtopic="news@example.com", body="status=unsubscribed, method=browser, clicked confirm, saw 'You have been unsubscribed'")
-```
+### Method D: No List-Unsubscribe header
 
-If unclear:
+For senders marked `[no List-Unsubscribe]`, you have no URL to work with. Record as skipped:
 ```
-Call scratchpad_write(topic="email", subtopic="news@example.com", body="status=attempted, method=browser, clicked confirm but no confirmation message")
+Call scratchpad_write(topic="email", subtopic="sender@example.com", body="status=skipped, no List-Unsubscribe header")
 ```
 
-## Step 4: Handle Edge Cases
-
-**Multi-step pages:** Re-snapshot after each interaction and respond to what's on the page.
-
-**JavaScript-heavy pages:** Always use `agent-browser wait --load networkidle`. If empty, try `agent-browser wait 3000` then re-snapshot.
-
-**"Manage preferences":** Look for "Unsubscribe from all" or uncheck all categories.
-
-## Step 5: Clean Up
+## Step 4: Clean Up
 
 Close the browser when done:
 ```bash
 agent-browser close
 ```
 
-Report results to the user: how many unsubscribed, attempted, skipped.
+Report results to the user.
 
 ## Important Rules
 
+- **NEVER fabricate URLs.** Only use URLs from the `List-Unsubscribe:` line in email_scan output.
 - Process senders ONE AT A TIME.
 - ALWAYS verify by reading the page after clicking.
-- NEVER enter the user's real credentials on third-party pages. Skip and mark "attempted".
+- NEVER enter the user's real credentials on third-party pages.
 - Close the browser session when done.

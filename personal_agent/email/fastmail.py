@@ -150,7 +150,7 @@ class FastmailProvider(EmailProvider):
             sender = sender_list[0].get("email", "") if sender_list else ""
             received_at = email.get("receivedAt", "")
             dt = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
-            list_unsub = email.get("header:List-Unsubscribe")
+            list_unsub = email.get("header:List-Unsubscribe") or ""
             results.append(
                 EmailSummary(
                     message_id=email["id"],
@@ -158,6 +158,7 @@ class FastmailProvider(EmailProvider):
                     subject=email.get("subject", ""),
                     date=dt,
                     has_list_unsubscribe=bool(list_unsub),
+                    list_unsubscribe=list_unsub.strip(),
                 )
             )
         return results
