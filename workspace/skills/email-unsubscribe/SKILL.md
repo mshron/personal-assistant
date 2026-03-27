@@ -6,29 +6,21 @@ metadata: {"nanobot": {"requires": {"bins": ["agent-browser"]}}}
 
 # Email Unsubscribe Workflow
 
-Multi-step agentic workflow for unsubscribing from email mailing lists. Tracks progress in the scratchpad. Uses real URLs from the email scan — NEVER fabricate or guess URLs.
+Multi-step agentic workflow for unsubscribing from email mailing lists. Uses real URLs from the email scan — NEVER fabricate or guess URLs.
 
 ## Overview
 
-1. **Check scratchpad** — See what's already been done
-2. **Scan** — Use `email_scan` to find senders (includes actual List-Unsubscribe URLs)
-3. **Compare** — Cross-reference scan results with scratchpad to find new senders
-4. **Unsubscribe** — Use agent-browser to visit the real unsubscribe URL
-5. **Record** — Write outcome to scratchpad
+1. **Scan** — Use `email_scan` to find senders (includes actual List-Unsubscribe URLs)
+2. **Unsubscribe** — Use agent-browser to visit the real unsubscribe URL
+3. **Report** — Tell the user what happened
 
-## Step 1: Check What's Been Done
-
-```
-Call scratchpad_lookup(topic="email")
-```
-
-## Step 2: Scan and Compare
+## Step 1: Scan
 
 ```
 Call email_scan(after="2026-03-01")
 ```
 
-The output includes `List-Unsubscribe:` headers with real URLs for each sender that has them. These are the ONLY URLs you should use. Example output:
+The output includes `List-Unsubscribe:` headers with real URLs. These are the ONLY URLs you should use. Example:
 
 ```
 - editor@members.perigold.com: 9 emails [has List-Unsubscribe]
@@ -36,19 +28,13 @@ The output includes `List-Unsubscribe:` headers with real URLs for each sender t
     - Sale: Up to 50% off
 ```
 
-## Step 3: Unsubscribe Using Real URLs
+## Step 2: Unsubscribe Using Real URLs
 
 **CRITICAL: Only use URLs from the List-Unsubscribe header in the scan output. NEVER guess or construct URLs.**
 
-### Method A: One-Click via agent-browser (best)
-
-If the List-Unsubscribe header contains an HTTPS URL, use agent-browser to POST to it:
+### Method A: Visit the unsubscribe URL with agent-browser
 
 ```bash
-# Extract the HTTPS URL from the List-Unsubscribe header
-# e.g. <https://example.com/unsub?token=abc123>
-
-# Navigate to the URL (this effectively does a GET)
 agent-browser open "https://example.com/unsub?token=abc123"
 agent-browser wait --load networkidle
 agent-browser snapshot -i
@@ -56,43 +42,34 @@ agent-browser snapshot -i
 
 Read the snapshot. If the page shows a confirmation button, click it. If it says "successfully unsubscribed", you're done.
 
-Record the result:
-```
-Call scratchpad_write(topic="email", subtopic="sender@example.com", body="status=unsubscribed, method=browser_one_click, visited real unsub URL")
-```
-
 ### Method B: Mailto
 
 If the List-Unsubscribe header contains a `mailto:` URL, note the address and use it to send an unsubscribe email.
 
 ### Method C: Interactive unsubscribe page
 
-If the one-click URL leads to a multi-step page:
+If the URL leads to a multi-step page, re-snapshot after each interaction:
 
 ```bash
-agent-browser snapshot -i
-# Read the page, find the confirm/unsubscribe button
 agent-browser click @e3
 agent-browser wait --load networkidle
 agent-browser snapshot -i
-# Verify confirmation
 ```
 
-### Method D: No List-Unsubscribe header
+### Method D: Cloudflare or bot detection
 
-For senders marked `[no List-Unsubscribe]`, you have no URL to work with. Record as skipped:
-```
-Call scratchpad_write(topic="email", subtopic="sender@example.com", body="status=skipped, no List-Unsubscribe header")
-```
+If the page shows a Cloudflare challenge, CAPTCHA, or blocks access, report the exact URL back to the user so they can visit it manually.
 
-## Step 4: Clean Up
+### Method E: No List-Unsubscribe header
+
+For senders marked `[no List-Unsubscribe]`, there's no URL to work with. Tell the user.
+
+## Step 3: Clean Up
 
 Close the browser when done:
 ```bash
 agent-browser close
 ```
-
-Report results to the user.
 
 ## Important Rules
 
@@ -100,4 +77,5 @@ Report results to the user.
 - Process senders ONE AT A TIME.
 - ALWAYS verify by reading the page after clicking.
 - NEVER enter the user's real credentials on third-party pages.
+- When blocked by Cloudflare/bot detection, report the URL for manual action.
 - Close the browser session when done.

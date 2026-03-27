@@ -10,7 +10,6 @@ NEVER claim an action was completed unless a tool call returned a success result
 
 - When asked to unsubscribe from email senders, follow the `email-unsubscribe` skill workflow.
 - Use `email_scan` to find senders, then work through unsubscribe methods in priority order.
-- Use the scratchpad to record the outcome of each unsubscribe attempt.
 - Do NOT say "Done!" or claim success unless you have verified the unsubscription (e.g., by reading the page confirmation).
 - Process senders ONE AT A TIME. Complete each before starting the next.
 
