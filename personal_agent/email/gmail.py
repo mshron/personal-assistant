@@ -140,11 +140,13 @@ class GmailProvider(EmailProvider):
         if not message_stubs:
             return []
 
-        # Step 2: Fetch each message's metadata
-        results: list[EmailSummary] = []
-        async with httpx.AsyncClient() as client:
-            for stub in message_stubs:
-                msg_id = stub["id"]
+        # Step 2: Fetch message metadata concurrently (up to 20 at a time)
+        import asyncio
+
+        sem = asyncio.Semaphore(20)
+
+        async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> EmailSummary:
+            async with sem:
                 resp = await client.get(
                     self._url(f"/messages/{msg_id}"),
                     headers=self._headers(),
@@ -155,34 +157,34 @@ class GmailProvider(EmailProvider):
                 resp.raise_for_status()
                 msg = resp.json()
 
-                headers = msg.get("payload", {}).get("headers", [])
-                from_header = self._find_header(headers, "From") or ""
-                subject = self._find_header(headers, "Subject") or ""
-                date_header = self._find_header(headers, "Date") or ""
-                list_unsub = self._find_header(headers, "List-Unsubscribe")
+            headers = msg.get("payload", {}).get("headers", [])
+            from_header = self._find_header(headers, "From") or ""
+            subject = self._find_header(headers, "Subject") or ""
+            list_unsub = self._find_header(headers, "List-Unsubscribe")
 
-                # Extract email address from "Name <email>" format
-                sender = from_header
-                if "<" in from_header and ">" in from_header:
-                    sender = from_header.split("<")[1].split(">")[0]
+            sender = from_header
+            if "<" in from_header and ">" in from_header:
+                sender = from_header.split("<")[1].split(">")[0]
 
-                # Parse internalDate (milliseconds since epoch)
-                internal_date_ms = int(msg.get("internalDate", "0"))
-                dt = datetime.fromtimestamp(
-                    internal_date_ms / 1000, tz=timezone.utc
-                )
+            internal_date_ms = int(msg.get("internalDate", "0"))
+            dt = datetime.fromtimestamp(
+                internal_date_ms / 1000, tz=timezone.utc
+            )
 
-                results.append(
-                    EmailSummary(
-                        message_id=msg_id,
-                        sender=sender,
-                        subject=subject,
-                        date=dt,
-                        has_list_unsubscribe=bool(list_unsub),
-                    )
-                )
+            return EmailSummary(
+                message_id=msg_id,
+                sender=sender,
+                subject=subject,
+                date=dt,
+                has_list_unsubscribe=bool(list_unsub),
+            )
 
-        return results
+        async with httpx.AsyncClient() as client:
+            results = await asyncio.gather(
+                *[_fetch_one(client, stub["id"]) for stub in message_stubs]
+            )
+
+        return list(results)
 
     async def get_headers(self, message_id: str) -> dict[str, str]:
         """Return selected headers for a single message."""
