@@ -1,26 +1,30 @@
 # Personal Agent
 
-A personal assistant that communicates via [Zulip](https://zulip.com), built on [nanobot-ai](https://github.com/HKUDS/nanobot). It can read and send email (Fastmail), search the web (Brave), and run tools — all behind a two-layer guardrail system and a credential-isolating proxy.
+A personal assistant that communicates via [Zulip](https://zulip.com) (in place of Telegram or WhatsApp). It can read and send email (Fastmail and Gmail), search the web (Brave), and run tools — all behind a two-layer guardrail system and a credential-isolating proxy.
+
+The agent is a wrapper around [nanobot-ai](https://github.com/HKUDS/nanobot), which handles sessions, memory, tool execution, and LLM calls. Nanobot is pinned as a dependency and can be upgraded independently. The integration uses nanobot's public interfaces (`BaseChannel`, `AgentLoop`, `MessageBus`, provider wrappers) plus a number of monkey-patches to hook in guardrails, logging, and custom channel behavior.
+
+Designed to run locally via Docker Compose or remotely on [Fly.io](https://fly.io), with [Apple container](https://developer.apple.com/documentation/containerization) support coming soon.
 
 ## How it works
 
-The agent runs as three containers:
+The agent runs as three containers on a private network (Docker bridge locally, Flycast in production):
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                  Fly.io (private network)             │
-│                                                       │
-│  ┌─────────────┐   ┌──────────────┐   ┌───────────┐ │
+│                   Private network                    │
+│                                                      │
+│  ┌──────────────┐   ┌──────────────┐   ┌───────────┐ │
 │  │   Agent      │──▸│  Credential  │──▸│ External  │ │
 │  │ (no secrets) │   │    Proxy     │   │   APIs    │ │
 │  │              │   │  (Caddy)     │   │           │ │
 │  └──────┬───────┘   └──────────────┘   └───────────┘ │
-│         │                                             │
-│         ▼                                             │
-│  ┌─────────────┐                                      │
-│  │ Log Service  │  append-only audit log              │
-│  │ (no secrets) │  (POST only, no read endpoint)      │
-│  └─────────────┘                                      │
+│         │                                            │
+│         ▼                                            │
+│  ┌─────────────┐                                     │
+│  │ Log Service  │  append-only audit log             │
+│  │ (no secrets) │  (POST only, no read endpoint)     │
+│  └─────────────┘                                     │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -38,7 +42,7 @@ The design assumes the agent processes untrusted input (email bodies, web conten
 
 The agent container has **zero API keys**. All external API access goes through the credential proxy, which injects authentication headers. Even if the agent is fully compromised, it cannot exfiltrate credentials — it literally doesn't have them. The proxy only routes to a fixed set of upstream APIs.
 
-The agent container is further hardened: all Linux capabilities dropped, `no-new-privileges`, read-only filesystem, tmpfs-only scratch space.
+In the Docker Compose setup, the agent container is further hardened: all Linux capabilities dropped, `no-new-privileges`, read-only root filesystem (with tmpfs scratch space and a persistent volume at `/data`). On Fly.io, the root filesystem is ephemeral and resets on each deploy, but is not enforced read-only at runtime.
 
 ### Layer 1: Prompt injection detection
 
@@ -56,7 +60,7 @@ Blocked actions are logged and the agent receives an error instead of executing.
 
 Every LLM request/response, tool call/result, guardrail decision, and PromptGuard scan is logged to the append-only log service. The agent can write logs but cannot read or delete them.
 
-## Running locally
+## Running locally (Docker Compose)
 
 ```bash
 uv sync --dev              # install dependencies
@@ -73,7 +77,7 @@ uv run pytest              # all tests
 uv run pytest -k "zulip"   # filter by name
 ```
 
-## Deploying
+## Deploying to Fly.io
 
 Three Fly.io apps in `iad`, deployed sequentially (log service, then proxy, then agent):
 
