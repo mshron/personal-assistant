@@ -22,8 +22,8 @@ The agent runs as three containers on a private network (Docker bridge locally, 
 │         │                                            │
 │         ▼                                            │
 │  ┌─────────────┐                                     │
-│  │ Log Service  │  append-only audit log             │
-│  │ (no secrets) │  (POST only, no read endpoint)     │
+│  │ Log Service │  append-only audit log              │
+│  │ (no secrets │  (POST only, no read endpoint)      │
 │  └─────────────┘                                     │
 └──────────────────────────────────────────────────────┘
 ```
