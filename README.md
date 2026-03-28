@@ -1,4 +1,4 @@
-# Personal Agent
+# Max's Personal Agent (a/k/a `polynumeral-assistant`)
 
 A personal assistant that communicates via [Zulip](https://zulip.com) (in place of Telegram or WhatsApp). It can read and send email (Fastmail and Gmail), search the web (Brave), and run tools — all behind a two-layer guardrail system and a credential-isolating proxy.
 
