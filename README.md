@@ -4,7 +4,7 @@ A personal assistant that communicates via [Zulip](https://zulip.com) (in place 
 
 The agent is a wrapper around [nanobot-ai](https://github.com/HKUDS/nanobot), which handles sessions, memory, tool execution, and LLM calls. Nanobot is pinned as a dependency and can be upgraded independently. The integration uses nanobot's public interfaces (`BaseChannel`, `AgentLoop`, `MessageBus`, provider wrappers) plus a number of monkey-patches to hook in guardrails, logging, and custom channel behavior.
 
-Designed to run locally via Docker Compose or remotely on [Fly.io](https://fly.io), with [Apple container](https://developer.apple.com/documentation/containerization) support coming soon.
+Designed to run locally via Docker Compose or remotely on [Fly.io](https://fly.io), with [Apple container](https://developer.apple.com/documentation/containerization) support built in.  
 
 ## How it works
 
