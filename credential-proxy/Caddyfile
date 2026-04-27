@@ -31,8 +31,21 @@
 		}
 	}
 
+	handle_path /local-llm/* {
+		reverse_proxy {env.LOCAL_LLM_HOST} {
+			header_up Authorization "Bearer {env.LOCAL_LLM_API_KEY}"
+			header_down -Server
+		}
+	}
+
 	handle_path /gmail/* {
-		reverse_proxy localhost:8081
+		reverse_proxy localhost:8081 {
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 10s
+			}
+		}
 	}
 
 }

@@ -68,16 +68,25 @@ def _build_agent():
             f"{cred_proxy_base.rstrip('/')}/gmail"
         )
 
-    api_key = "proxy"
-    api_base = f"{cred_proxy_base.rstrip('/')}/anthropic"
-
-    inner_provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=config.agents.defaults.model,
-        extra_headers=None,
-        provider_name="anthropic",
-    )
+    use_local_llm = os.environ.get("USE_LOCAL_LLM", "").lower() in ("1", "true", "yes")
+    if use_local_llm:
+        model = os.environ.get("LOCAL_LLM_MODEL", "qwen3.6-35b-a3b-thinking")
+        inner_provider = LiteLLMProvider(
+            api_key="proxy",
+            api_base=f"{cred_proxy_base.rstrip('/')}/local-llm/v1",
+            default_model=f"openai/{model}",
+            extra_headers=None,
+            provider_name="openai",
+        )
+        config.agents.defaults.model = f"openai/{model}"
+    else:
+        inner_provider = LiteLLMProvider(
+            api_key="proxy",
+            api_base=f"{cred_proxy_base.rstrip('/')}/anthropic",
+            default_model=config.agents.defaults.model,
+            extra_headers=None,
+            provider_name="anthropic",
+        )
     provider = _RetryProvider(inner_provider, delay=2.0, max_retries=5)
 
     bus = MessageBus()
