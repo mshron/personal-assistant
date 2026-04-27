@@ -24,13 +24,23 @@ _bootstrap() {
     fi
 }
 
+_link_obsidian() {
+    # If Obsidian vault is mounted at /data/obsidian, symlink into workspace
+    if [ -d /data/obsidian ]; then
+        ln -sfn /data/obsidian /data/nanobot/workspace/obsidian
+        echo "[start.sh] Linked Obsidian vault into workspace"
+    fi
+}
+
 if [ "$(id -u)" = "0" ]; then
     chown -R appuser:appuser /data
     _bootstrap
+    _link_obsidian
     exec gosu appuser .venv/bin/python -m personal_agent.main
 else
     # Already running as non-root (e.g. local Docker with USER directive)
     mkdir -p /data/nanobot
     _bootstrap
+    _link_obsidian
     exec .venv/bin/python -m personal_agent.main
 fi

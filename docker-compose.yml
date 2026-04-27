@@ -9,6 +9,8 @@ services:
       - BRAVE_API_KEY=${BRAVE_API_KEY}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - GMAIL_ADDRESS=${GMAIL_ADDRESS}
+      - LOCAL_LLM_HOST=${LOCAL_LLM_HOST}
+      - LOCAL_LLM_API_KEY=${LOCAL_LLM_API_KEY}
     networks:
       - internal
     restart: unless-stopped
@@ -66,8 +68,14 @@ services:
       - EMAIL_SUBSCRIPTIONS_FILE=${EMAIL_SUBSCRIPTIONS_FILE}
       - RATE_LIMIT_TPM=${RATE_LIMIT_TPM}
       - LOG_FILE=${LOG_FILE}
+      - USE_LOCAL_LLM=${USE_LOCAL_LLM}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL}
+      - OBSIDIAN_VAULT_PATH=${OBSIDIAN_VAULT_PATH}
+      - FINANCE_PATH=${FINANCE_PATH}
     volumes:
       - agent-data:/data/nanobot
+      - ${OBSIDIAN_VAULT_PATH:-/dev/null}:/data/obsidian
+      - ${FINANCE_PATH:-/dev/null}:/workspace
     depends_on:
       - log-service
       - credential-proxy
