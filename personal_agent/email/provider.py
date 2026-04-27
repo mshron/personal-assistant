@@ -20,6 +20,14 @@ class EmailSummary:
     list_unsubscribe: str = ""  # Raw List-Unsubscribe header value
 
 
+@dataclass
+class SearchResult:
+    """Paginated search result."""
+
+    emails: list[EmailSummary]
+    total: int
+
+
 # Pattern that loosely matches unsubscribe-style content.
 _UNSUBSCRIBE_RE = re.compile(r"unsub", re.IGNORECASE)
 
@@ -39,7 +47,9 @@ class EmailProvider(ABC):
         after: date,
         before: date,
         folder: str = "Inbox",
-    ) -> list[EmailSummary]:
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SearchResult:
         """Return summaries of messages in *folder* within the date range."""
         ...
 

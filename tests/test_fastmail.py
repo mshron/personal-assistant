@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from personal_agent.email.fastmail import FastmailProvider
+from personal_agent.email.provider import SearchResult
 
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
@@ -106,7 +107,7 @@ class TestSearch:
                 "methodResponses": [
                     [
                         "Email/query",
-                        {"ids": ["msg-1", "msg-2"]},
+                        {"ids": ["msg-1", "msg-2"], "total": 2},
                         "q0",
                     ],
                     [
@@ -135,30 +136,32 @@ class TestSearch:
             },
         )
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2026, 3, 1),
             before=date(2026, 3, 7),
             folder="Inbox",
         )
 
-        assert len(results) == 2
-        assert results[0].message_id == "msg-1"
-        assert results[0].sender == "alice@example.com"
-        assert results[0].subject == "Newsletter"
-        assert results[0].has_list_unsubscribe is True
-        assert results[1].message_id == "msg-2"
-        assert results[1].has_list_unsubscribe is False
+        assert len(result.emails) == 2
+        assert result.total == 2
+        assert result.emails[0].message_id == "msg-1"
+        assert result.emails[0].sender == "alice@example.com"
+        assert result.emails[0].subject == "Newsletter"
+        assert result.emails[0].has_list_unsubscribe is True
+        assert result.emails[1].message_id == "msg-2"
+        assert result.emails[1].has_list_unsubscribe is False
 
     async def test_search_unknown_folder_returns_empty(self, httpx_mock, provider):
         _add_session_mock(httpx_mock)
         httpx_mock.add_response(url=FAKE_API_URL, json=MAILBOX_RESPONSE)
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2026, 3, 1),
             before=date(2026, 3, 7),
             folder="NonExistent",
         )
-        assert results == []
+        assert result.emails == []
+        assert result.total == 0
 
     async def test_search_sends_correct_filter(self, httpx_mock, provider):
         """Verify the filter condition includes date range and mailbox."""
@@ -189,6 +192,96 @@ class TestSearch:
         assert filter_cond["inMailbox"] == "mb-inbox"
         assert "2026-03-01" in filter_cond["after"]
         assert "2026-03-07" in filter_cond["before"]
+
+    async def test_search_returns_search_result(self, httpx_mock, provider):
+        """search() returns SearchResult with total count."""
+        _add_session_mock(httpx_mock)
+        httpx_mock.add_response(url=FAKE_API_URL, json=MAILBOX_RESPONSE)
+        httpx_mock.add_response(
+            url=FAKE_API_URL,
+            json={
+                "methodResponses": [
+                    ["Email/query", {"ids": ["msg-1", "msg-2", "msg-3"], "total": 3}, "q0"],
+                    [
+                        "Email/get",
+                        {
+                            "list": [
+                                {
+                                    "id": "msg-1",
+                                    "from": [{"email": "a@example.com"}],
+                                    "subject": "A",
+                                    "receivedAt": "2026-03-01T10:00:00Z",
+                                    "header:List-Unsubscribe": None,
+                                },
+                                {
+                                    "id": "msg-2",
+                                    "from": [{"email": "b@example.com"}],
+                                    "subject": "B",
+                                    "receivedAt": "2026-03-02T10:00:00Z",
+                                    "header:List-Unsubscribe": None,
+                                },
+                                {
+                                    "id": "msg-3",
+                                    "from": [{"email": "c@example.com"}],
+                                    "subject": "C",
+                                    "receivedAt": "2026-03-03T10:00:00Z",
+                                    "header:List-Unsubscribe": None,
+                                },
+                            ]
+                        },
+                        "g0",
+                    ],
+                ]
+            },
+        )
+
+        result = await provider.search(after=date(2026, 3, 1), before=date(2026, 3, 7))
+        assert isinstance(result, SearchResult)
+        assert result.total == 3
+        assert len(result.emails) == 3
+
+    async def test_search_respects_limit_and_offset(self, httpx_mock, provider):
+        """limit and offset are passed to JMAP Email/query."""
+        _add_session_mock(httpx_mock)
+        httpx_mock.add_response(url=FAKE_API_URL, json=MAILBOX_RESPONSE)
+        httpx_mock.add_response(
+            url=FAKE_API_URL,
+            json={
+                "methodResponses": [
+                    ["Email/query", {"ids": ["msg-2"], "total": 3}, "q0"],
+                    [
+                        "Email/get",
+                        {
+                            "list": [
+                                {
+                                    "id": "msg-2",
+                                    "from": [{"email": "b@example.com"}],
+                                    "subject": "B",
+                                    "receivedAt": "2026-03-02T10:00:00Z",
+                                    "header:List-Unsubscribe": None,
+                                },
+                            ]
+                        },
+                        "g0",
+                    ],
+                ]
+            },
+        )
+
+        result = await provider.search(
+            after=date(2026, 3, 1), before=date(2026, 3, 7), limit=1, offset=1
+        )
+        assert result.total == 3
+        assert len(result.emails) == 1
+        assert result.emails[0].message_id == "msg-2"
+
+        # Verify the JMAP request included limit and position
+        import json
+        api_requests = [r for r in httpx_mock.get_requests() if r.url == FAKE_API_URL]
+        body = json.loads(api_requests[1].content)
+        query_params = body["methodCalls"][0][1]
+        assert query_params["limit"] == 1
+        assert query_params["position"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +630,7 @@ class TestProxyRouting:
             url=FAKE_API_URL,
             json={
                 "methodResponses": [
-                    ["Email/query", {"ids": ["msg-p1"]}, "q0"],
+                    ["Email/query", {"ids": ["msg-p1"], "total": 1}, "q0"],
                     [
                         "Email/get",
                         {
@@ -557,11 +650,11 @@ class TestProxyRouting:
             },
         )
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2026, 3, 1), before=date(2026, 3, 7)
         )
-        assert len(results) == 1
-        assert results[0].sender == "proxy@example.com"
+        assert len(result.emails) == 1
+        assert result.emails[0].sender == "proxy@example.com"
 
         # All requests should have gone to the proxy, none to Fastmail directly
         for req in httpx_mock.get_requests():

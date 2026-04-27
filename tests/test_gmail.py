@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from personal_agent.email.gmail import GmailProvider
+from personal_agent.email.provider import SearchResult
 
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
@@ -88,20 +89,22 @@ class TestSearch:
             },
         )
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2024, 3, 1),
             before=date(2024, 3, 7),
             folder="Inbox",
         )
 
-        assert len(results) == 2
-        assert results[0].message_id == "msg-1"
-        assert results[0].sender == "alice@example.com"
-        assert results[0].subject == "Newsletter"
-        assert results[0].has_list_unsubscribe is True
-        assert results[1].message_id == "msg-2"
-        assert results[1].sender == "bob@example.com"  # extracted from angle brackets
-        assert results[1].has_list_unsubscribe is False
+        assert isinstance(result, SearchResult)
+        assert result.total == 2
+        assert len(result.emails) == 2
+        assert result.emails[0].message_id == "msg-1"
+        assert result.emails[0].sender == "alice@example.com"
+        assert result.emails[0].subject == "Newsletter"
+        assert result.emails[0].has_list_unsubscribe is True
+        assert result.emails[1].message_id == "msg-2"
+        assert result.emails[1].sender == "bob@example.com"  # extracted from angle brackets
+        assert result.emails[1].has_list_unsubscribe is False
 
     async def test_search_no_messages_returns_empty(self, httpx_mock, provider):
         httpx_mock.add_response(
@@ -109,11 +112,13 @@ class TestSearch:
             json={},
         )
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2024, 3, 1),
             before=date(2024, 3, 7),
         )
-        assert results == []
+        assert isinstance(result, SearchResult)
+        assert result.total == 0
+        assert result.emails == []
 
     async def test_search_sends_correct_query(self, httpx_mock, provider):
         """Verify the query includes date range and label."""
@@ -131,6 +136,79 @@ class TestSearch:
         assert "after:2024/03/01" in url_str
         assert "before:2024/03/07" in url_str
         assert "INBOX" in url_str
+
+    async def test_search_returns_search_result(self, httpx_mock, provider):
+        """search() returns SearchResult with total count."""
+        httpx_mock.add_response(
+            url=_messages_url_pattern(),
+            json={"messages": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]},
+        )
+        for msg_id, sender in [("m1", "a@x.com"), ("m2", "b@x.com"), ("m3", "c@x.com")]:
+            httpx_mock.add_response(
+                url=_msg_url_pattern(msg_id),
+                json={
+                    "id": msg_id,
+                    "internalDate": "1709290800000",
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": sender},
+                            {"name": "Subject", "value": f"Subject {msg_id}"},
+                            {"name": "Date", "value": "Sat, 01 Mar 2026 10:00:00 +0000"},
+                        ]
+                    },
+                },
+            )
+
+        result = await provider.search(after=date(2026, 3, 1), before=date(2026, 3, 7))
+        assert isinstance(result, SearchResult)
+        assert result.total == 3
+        assert len(result.emails) == 3
+
+    async def test_search_respects_limit_and_offset(self, httpx_mock, provider):
+        """Only metadata for the sliced IDs should be fetched."""
+        httpx_mock.add_response(
+            url=_messages_url_pattern(),
+            json={"messages": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]},
+        )
+        # Only m2 should be fetched (offset=1, limit=1)
+        httpx_mock.add_response(
+            url=_msg_url_pattern("m2"),
+            json={
+                "id": "m2",
+                "internalDate": "1709290800000",
+                "payload": {
+                    "headers": [
+                        {"name": "From", "value": "b@x.com"},
+                        {"name": "Subject", "value": "Subject B"},
+                        {"name": "Date", "value": "Sat, 01 Mar 2026 10:00:00 +0000"},
+                    ]
+                },
+            },
+        )
+
+        result = await provider.search(
+            after=date(2026, 3, 1), before=date(2026, 3, 7), limit=1, offset=1
+        )
+        assert result.total == 3
+        assert len(result.emails) == 1
+        assert result.emails[0].message_id == "m2"
+
+        # Verify only 2 requests: list + 1 metadata fetch (not 3 metadata fetches)
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+    async def test_search_offset_beyond_results(self, httpx_mock, provider):
+        """Offset past the end returns empty emails but correct total."""
+        httpx_mock.add_response(
+            url=_messages_url_pattern(),
+            json={"messages": [{"id": "m1"}]},
+        )
+
+        result = await provider.search(
+            after=date(2026, 3, 1), before=date(2026, 3, 7), offset=5
+        )
+        assert result.total == 1
+        assert result.emails == []
 
 
 # ---------------------------------------------------------------------------
@@ -380,11 +458,11 @@ class TestProxyRouting:
             },
         )
 
-        results = await provider.search(
+        result = await provider.search(
             after=date(2024, 3, 1), before=date(2024, 3, 7)
         )
-        assert len(results) == 1
-        assert results[0].sender == "proxy@example.com"
+        assert len(result.emails) == 1
+        assert result.emails[0].sender == "proxy@example.com"
 
         # All requests should have gone to the proxy, none to Google directly
         for req in httpx_mock.get_requests():

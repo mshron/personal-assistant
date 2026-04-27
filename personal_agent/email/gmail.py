@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from datetime import date, datetime, timezone
 from email.mime.text import MIMEText
@@ -9,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from personal_agent.email.provider import EmailProvider, EmailSummary
+from personal_agent.email.provider import EmailProvider, EmailSummary, SearchResult
 
 # Gmail uses label IDs instead of folder names.
 _FOLDER_TO_LABEL: dict[str, str] = {
@@ -113,7 +114,9 @@ class GmailProvider(EmailProvider):
         after: date,
         before: date,
         folder: str = "Inbox",
-    ) -> list[EmailSummary]:
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SearchResult:
         """Search for emails in *folder* within the given date range."""
         label_id = self._resolve_label_id(folder)
 
@@ -127,7 +130,6 @@ class GmailProvider(EmailProvider):
         }
 
         async with httpx.AsyncClient() as client:
-            # Step 1: List message IDs
             resp = await client.get(
                 self._url("/messages"),
                 headers=self._headers(),
@@ -137,11 +139,14 @@ class GmailProvider(EmailProvider):
             data = resp.json()
 
         message_stubs = data.get("messages", [])
+        total = len(message_stubs)
         if not message_stubs:
-            return []
+            return SearchResult(emails=[], total=0)
 
-        # Step 2: Fetch message metadata concurrently (up to 20 at a time)
-        import asyncio
+        # Slice by offset/limit — only fetch metadata for the page we need
+        page_stubs = message_stubs[offset : offset + limit]
+        if not page_stubs:
+            return SearchResult(emails=[], total=total)
 
         sem = asyncio.Semaphore(5)
 
@@ -182,10 +187,10 @@ class GmailProvider(EmailProvider):
 
         async with httpx.AsyncClient() as client:
             results = await asyncio.gather(
-                *[_fetch_one(client, stub["id"]) for stub in message_stubs]
+                *[_fetch_one(client, stub["id"]) for stub in page_stubs]
             )
 
-        return list(results)
+        return SearchResult(emails=list(results), total=total)
 
     async def get_headers(self, message_id: str) -> dict[str, str]:
         """Return selected headers for a single message."""

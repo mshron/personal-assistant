@@ -28,7 +28,7 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 
 # Default path for persisting engaged topics (overridable via ENGAGED_TOPICS_FILE)
-_DEFAULT_ENGAGED_TOPICS_FILE = "/data/zulip_engaged_topics.json"
+_DEFAULT_ENGAGED_TOPICS_FILE = "/data/nanobot/zulip_engaged_topics.json"
 
 
 @dataclass

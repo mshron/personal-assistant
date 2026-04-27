@@ -1,9 +1,9 @@
-"""Email MCP tools -- FastMCP server exposing email scan."""
+"""Email MCP tools -- FastMCP server exposing composable email tools."""
 
 from __future__ import annotations
 
+import json
 import os
-from collections import defaultdict
 from datetime import date
 
 from mcp.server.fastmcp import FastMCP
@@ -37,9 +37,35 @@ def _get_providers() -> list[tuple[str, EmailProvider]]:
     return providers
 
 
+def _get_provider(account: str) -> EmailProvider | None:
+    """Look up a single provider by account name. Returns None if not found."""
+    for name, provider in _get_providers():
+        if name == account:
+            return provider
+    return None
+
+
 @mcp.tool()
-async def email_scan(after: str, before: str = "", folder: str = "Inbox") -> str:
-    """Scan emails in a date range and group by sender.
+async def email_accounts() -> str:
+    """List configured email account names.
+
+    Returns a JSON array of account names, e.g. ["fastmail", "gmail"].
+    Use these names with email_search, email_get_headers, and email_get_body.
+    """
+    providers = _get_providers()
+    return json.dumps([name for name, _ in providers])
+
+
+@mcp.tool()
+async def email_search(
+    after: str,
+    before: str = "",
+    folder: str = "Inbox",
+    account: str = "",
+    limit: int = 20,
+    offset: int = 0,
+) -> str:
+    """Search emails in a date range with pagination.
 
     Parameters
     ----------
@@ -49,56 +75,107 @@ async def email_scan(after: str, before: str = "", folder: str = "Inbox") -> str
         End date (ISO format, e.g. "2026-03-26"). Defaults to today.
     folder:
         Mailbox folder to scan (default "Inbox").
+    account:
+        Account name from email_accounts(). If empty, searches all accounts.
+    limit:
+        Max emails to return (default 20, max 50).
+    offset:
+        Number of results to skip (default 0).
 
-    Returns a formatted report of all senders with email counts,
-    unsubscribe availability, and sample subjects.
+    Returns JSON with total count and email summaries.
     """
+    limit = min(limit, 50)
     after_date = date.fromisoformat(after)
     before_date = date.fromisoformat(before) if before else date.today()
 
-    providers = _get_providers()
+    if account:
+        provider = _get_provider(account)
+        if provider is None:
+            names = [n for n, _ in _get_providers()]
+            return f"Error: unknown account '{account}'. Available accounts: {names}"
+        result = await provider.search(after_date, before_date, folder, limit=limit, offset=offset)
+        emails_out = [
+            {
+                "account": account,
+                "message_id": e.message_id,
+                "sender": e.sender,
+                "subject": e.subject,
+                "date": e.date.isoformat(),
+                "has_list_unsubscribe": e.has_list_unsubscribe,
+            }
+            for e in result.emails
+        ]
+        return json.dumps({"total": result.total, "offset": offset, "limit": limit, "emails": emails_out})
 
-    # Collect emails from all providers, tagging each with its provider name
-    all_emails = []
-    provider_for_sender: dict[str, str] = {}
+    # Search all accounts, merge by date descending
+    all_tagged: list[tuple[str, object]] = []
+    total = 0
+    for name, provider in _get_providers():
+        # Fetch enough to cover the requested window after merge
+        result = await provider.search(after_date, before_date, folder, limit=offset + limit, offset=0)
+        total += result.total
+        for e in result.emails:
+            all_tagged.append((name, e))
 
-    for provider_name, provider in providers:
-        emails = await provider.search(after_date, before_date, folder)
-        for email in emails:
-            all_emails.append(email)
-            if email.sender not in provider_for_sender:
-                provider_for_sender[email.sender] = provider_name
+    # Sort merged results by date descending
+    all_tagged.sort(key=lambda x: x[1].date, reverse=True)
 
-    if not all_emails:
-        return f"No emails found in {folder} between {after} and {before}."
+    # Apply offset/limit to the merged set
+    page = all_tagged[offset : offset + limit]
 
-    # Group by sender
-    by_sender: dict[str, list] = defaultdict(list)
-    for email in all_emails:
-        by_sender[email.sender].append(email)
+    emails_out = [
+        {
+            "account": acct,
+            "message_id": e.message_id,
+            "sender": e.sender,
+            "subject": e.subject,
+            "date": e.date.isoformat(),
+            "has_list_unsubscribe": e.has_list_unsubscribe,
+        }
+        for acct, e in page
+    ]
+    return json.dumps({"total": total, "offset": offset, "limit": limit, "emails": emails_out})
 
-    # Format output — all senders, sorted by count descending
-    lines: list[str] = []
-    lines.append(f"Email scan: {folder} from {after} to {before}")
-    lines.append(f"Total emails: {len(all_emails)}, Unique senders: {len(by_sender)}")
-    lines.append("")
 
-    sorted_senders = sorted(by_sender.items(), key=lambda x: len(x[1]), reverse=True)
-    for sender, msgs in sorted_senders:
-        has_unsub = any(m.has_list_unsubscribe for m in msgs)
-        unsub_label = "[has List-Unsubscribe]" if has_unsub else "[no List-Unsubscribe]"
-        provider_label = f" ({provider_for_sender.get(sender, '')})" if len(providers) > 1 else ""
-        lines.append(f"- {sender}: {len(msgs)} emails {unsub_label}{provider_label}")
-        # Include the actual List-Unsubscribe header from the first email that has one
-        if has_unsub:
-            unsub_msg = next((m for m in msgs if m.list_unsubscribe), None)
-            if unsub_msg:
-                lines.append(f"    List-Unsubscribe: {unsub_msg.list_unsubscribe}")
-        sample_subjects = [m.subject for m in msgs[:3]]
-        for subj in sample_subjects:
-            lines.append(f"    - {subj}")
+@mcp.tool()
+async def email_get_headers(account: str, message_id: str) -> str:
+    """Get headers for a specific email message.
 
-    return "\n".join(lines)
+    Parameters
+    ----------
+    account:
+        Account name from email_accounts().
+    message_id:
+        Message ID from email_search results.
+
+    Returns JSON dict of headers (From, Subject, List-Unsubscribe, etc.).
+    """
+    provider = _get_provider(account)
+    if provider is None:
+        names = [n for n, _ in _get_providers()]
+        return f"Error: unknown account '{account}'. Available accounts: {names}"
+    headers = await provider.get_headers(message_id)
+    return json.dumps(headers)
+
+
+@mcp.tool()
+async def email_get_body(account: str, message_id: str) -> str:
+    """Get the body of a specific email message.
+
+    Parameters
+    ----------
+    account:
+        Account name from email_accounts().
+    message_id:
+        Message ID from email_search results.
+
+    Returns the message body (HTML preferred, falls back to plain text).
+    """
+    provider = _get_provider(account)
+    if provider is None:
+        names = [n for n, _ in _get_providers()]
+        return f"Error: unknown account '{account}'. Available accounts: {names}"
+    return await provider.get_body(message_id)
 
 
 def main() -> None:

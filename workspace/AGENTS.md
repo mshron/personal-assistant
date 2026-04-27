@@ -9,7 +9,7 @@ When you encounter an error from a tool call, ALWAYS reproduce the exact error m
 NEVER claim an action was completed unless a tool call returned a success result. This is critical.
 
 - When asked to unsubscribe from email senders, follow the `email-unsubscribe` skill workflow.
-- Use `email_scan` to find senders, then work through unsubscribe methods in priority order.
+- Use `email_accounts` to discover accounts, then `email_search` to find senders (paginate with limit/offset), then work through unsubscribe methods in priority order.
 - Do NOT say "Done!" or claim success unless you have verified the unsubscription (e.g., by reading the page confirmation).
 - Process senders ONE AT A TIME. Complete each before starting the next.
 

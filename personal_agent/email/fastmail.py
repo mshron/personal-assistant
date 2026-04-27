@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from personal_agent.email.provider import EmailProvider, EmailSummary
+from personal_agent.email.provider import EmailProvider, EmailSummary, SearchResult
 
 
 class FastmailProvider(EmailProvider):
@@ -96,13 +96,15 @@ class FastmailProvider(EmailProvider):
         after: date,
         before: date,
         folder: str = "Inbox",
-    ) -> list[EmailSummary]:
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SearchResult:
         """Search for emails in *folder* within the given date range."""
         await self._ensure_session()
 
         mailbox_id = await self._resolve_mailbox_id(folder)
         if mailbox_id is None:
-            return []
+            return SearchResult(emails=[], total=0)
 
         filter_condition: dict[str, Any] = {
             "inMailbox": mailbox_id,
@@ -117,7 +119,8 @@ class FastmailProvider(EmailProvider):
                     "accountId": self._account_id,
                     "filter": filter_condition,
                     "sort": [{"property": "receivedAt", "isAscending": False}],
-                    "limit": 500,
+                    "limit": limit,
+                    "position": offset,
                 },
                 "q0",
             ],
@@ -142,7 +145,7 @@ class FastmailProvider(EmailProvider):
             ],
         ])
 
-        # The second response is the Email/get result.
+        total = responses[0][1].get("total", 0)
         emails = responses[1][1]["list"]
         results: list[EmailSummary] = []
         for email in emails:
@@ -161,7 +164,7 @@ class FastmailProvider(EmailProvider):
                     list_unsubscribe=list_unsub.strip(),
                 )
             )
-        return results
+        return SearchResult(emails=results, total=total)
 
     async def get_headers(self, message_id: str) -> dict[str, str]:
         """Return selected headers for a single message."""
