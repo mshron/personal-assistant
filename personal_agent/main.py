@@ -126,6 +126,55 @@ async def cli_loop(agent):
         print(f"\n{response}\n")
 
 
+_AUTO_CONTINUE_SENTINEL = "I reached the maximum number of tool call iterations"
+_AUTO_CONTINUE_MAX = 3
+_AUTO_CONTINUE_PROMPT = (
+    "Continue from where you left off. Use additional tool calls as needed."
+)
+
+
+async def _maybe_auto_continue(
+    bus,
+    msg,
+    counts: dict[str, int],
+    max_retries: int = _AUTO_CONTINUE_MAX,
+) -> None:
+    """Re-inject a synthetic 'continue' inbound when nanobot reports it hit
+    max_tool_iterations. Resets the per-session counter on any normal reply
+    so a long-running session can hit the limit again later."""
+    from nanobot.bus.events import InboundMessage
+
+    if msg.metadata.get("_progress"):
+        return
+
+    session_key = f"{msg.channel}:{msg.chat_id}"
+    if not msg.content.startswith(_AUTO_CONTINUE_SENTINEL):
+        counts.pop(session_key, None)
+        return
+
+    count = counts.get(session_key, 0)
+    if count >= max_retries:
+        print(
+            f"[auto-continue] {session_key} exhausted after {max_retries} retries",
+            flush=True,
+        )
+        # Don't reset; stay exhausted until a non-sentinel reply arrives,
+        # otherwise a stale sentinel could re-arm the loop indefinitely.
+        return
+
+    counts[session_key] = count + 1
+    print(
+        f"[auto-continue] {session_key} {count + 1}/{max_retries}",
+        flush=True,
+    )
+    await bus.publish_inbound(InboundMessage(
+        channel=msg.channel,
+        sender_id="__auto_continue__",
+        chat_id=msg.chat_id,
+        content=_AUTO_CONTINUE_PROMPT,
+    ))
+
+
 async def run_zulip(agent):
     """Run the agent in Zulip gateway mode."""
     from personal_agent.zulip_channel import ZulipChannel, ZulipConfig
@@ -133,13 +182,15 @@ async def run_zulip(agent):
     config = ZulipConfig.from_env()
     channel = ZulipChannel(config, agent.bus)
 
-    # Run agent loop, channel listener, and outbound consumer concurrently
+    continue_count: dict[str, int] = {}
+
     async def _consume_outbound():
         """Route outbound messages from the bus to the Zulip channel."""
         while True:
             msg = await agent.bus.consume_outbound()
             if msg.channel == "zulip":
                 await channel.send(msg)
+            await _maybe_auto_continue(agent.bus, msg, continue_count)
 
     await asyncio.gather(
         agent.run(),
